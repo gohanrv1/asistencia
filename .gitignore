@@ -1,0 +1,39 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache y compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Base de datos local y datos persistentes
+*.db
+*.db-journal
+*.db-wal
+data/
+
+# IDEs y Editores
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+
+# Archivos del agente
+AGENTS.md
+task.md
+implementation_plan.md
+walkthrough.md
+transcript.jsonl
+transcript_full.jsonl
+.system_generated/

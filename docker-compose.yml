@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  asistencia:
+    build: .
+    container_name: app-asistencia
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/backend/data
+    environment:
+      - DATABASE_URL=sqlite:////app/backend/data/asistencia.db
+    restart: always

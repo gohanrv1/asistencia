@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistencia</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+:root {
+  --bg:#fff; --bg2:#f5f5f3; --bg3:#eeede9;
+  --text:#111110; --text2:#666663;
+  --border:rgba(0,0,0,0.12); --border2:rgba(0,0,0,0.22);
+  --r:8px; --rl:12px;
+  --purple:#534AB7; --pl:#EEEDFE; --pd:#3C3489;
+  --teal:#1D9E75; --tl:#E1F5EE; --td:#085041;
+  --amber:#EF9F27; --al:#FAEEDA; --ad:#633806;
+  --red:#E24B4A; --rl2:#FCEBEB; --rd:#791F1F;
+  --green:#639922; --gl:#EAF3DE; --gd:#27500A;
+  --blue-l:#E6F1FB; --blue-d:#0C447C;
+  --coral-l:#FAECE7; --coral-d:#712B13;
+  --gray-l:#F1EFE8; --gray-d:#5F5E5A;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1a1a18;--bg2:#242422;--bg3:#2e2e2b;
+    --text:#f0efea;--text2:#9a9a95;
+    --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.18);
+    --pl:#26215C;--pd:#CECBF6;
+    --tl:#04342C;--td:#9FE1CB;
+    --al:#412402;--ad:#FAC775;
+    --rl2:#501313;--rd:#F7C1C1;
+    --gl:#173404;--gd:#C0DD97;
+    --blue-l:#042C53;--blue-d:#B5D4F4;
+    --coral-l:#4A1B0C;--coral-d:#F5C4B3;
+    --gray-l:#2C2C2A;--gray-d:#D3D1C7;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;font-size:15px;line-height:1.5;}
+.app{display:flex;flex-direction:column;height:100vh;max-width:860px;margin:0 auto;background:var(--bg);box-shadow:0 0 0 0.5px var(--border);}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:10;}
+.topbar-left{display:flex;align-items:center;gap:10px;}
+.topbar-title{font-size:16px;font-weight:500;}
+.logo{width:32px;height:32px;background:var(--purple);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;}
+.sync-badge{display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 11px;border-radius:20px;border:0.5px solid;cursor:pointer;user-select:none;transition:opacity .15s;}
+.sync-badge:hover{opacity:.8;}
+.s-online{background:var(--gl);color:var(--gd);border-color:var(--green);}
+.s-offline{background:var(--al);color:var(--ad);border-color:var(--amber);}
+.s-syncing{background:var(--pl);color:var(--pd);border-color:var(--purple);}
+.nav{display:flex;border-bottom:0.5px solid var(--border);}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 8px;font-size:11px;color:var(--text2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;}
+.nav-btn:hover{background:var(--bg2);}
+.nav-btn.active{color:var(--purple);border-bottom-color:var(--purple);}
+.nav-btn i{font-size:20px;}
+.content{flex:1;overflow-y:auto;padding:20px;}
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.st{font-size:18px;font-weight:500;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--r);font-size:14px;cursor:pointer;border:0.5px solid var(--border2);background:transparent;color:var(--text);transition:all .15s;font-family:inherit;}
+.btn:hover{background:var(--bg2);}
+.btn:active{transform:scale(.98);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-primary{background:var(--purple);color:#fff;border-color:var(--purple);}
+.btn-primary:hover{background:var(--pd);}
+.btn-sm{padding:5px 10px;font-size:13px;}
+.btn-danger{color:var(--rd);border-color:var(--red);}
+.btn-danger:hover{background:var(--rl2);}
+.card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;transition:border-color .15s;}
+.card:hover{border-color:var(--border2);}
+.card-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.card-title{font-size:15px;font-weight:500;}
+.card-sub{font-size:13px;color:var(--text2);margin-top:2px;}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pd);}
+.bt{background:var(--tl);color:var(--td);}
+.ba{background:var(--al);color:var(--ad);}
+.bg2c{background:var(--gl);color:var(--gd);}
+.bgr{background:var(--gray-l);color:var(--gray-d);}
+.av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0;}
+.av-purple{background:var(--pl);color:var(--pd);}
+.av-teal{background:var(--tl);color:var(--td);}
+.av-blue{background:var(--blue-l);color:var(--blue-d);}
+.av-coral{background:var(--coral-l);color:var(--coral-d);}
+.person-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r);cursor:pointer;transition:background .1s;}
+.person-row:hover{background:var(--bg2);}
+.person-row.present{background:var(--tl);}
+.person-row.absent{background:var(--bg2);}
+.pinfo{flex:1;min-width:0;}
+.pname{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.prole{font-size:12px;color:var(--text2);}
+.att-toggle{width:36px;height:36px;border-radius:50%;border:0.5px solid;display:flex;align-items:center;justify-content:center;font-size:18px;transition:all .15s;flex-shrink:0;}
+.att-y{background:var(--tl);border-color:var(--teal);color:var(--td);}
+.att-n{background:var(--bg2);border-color:var(--border2);color:var(--text2);}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal{background:var(--bg);border-radius:var(--rl);padding:24px;width:100%;max-width:400px;border:0.5px solid var(--border2);}
+.modal-title{font-size:17px;font-weight:500;margin-bottom:16px;}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+label{display:block;font-size:13px;color:var(--text2);margin-bottom:4px;margin-top:14px;}
+label:first-of-type{margin-top:0;}
+input,select,textarea{width:100%;padding:8px 12px;border:0.5px solid var(--border2);border-radius:var(--r);font-size:14px;background:var(--bg);color:var(--text);font-family:inherit;}
+input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
+.empty{text-align:center;padding:48px 20px;color:var(--text2);}
+.empty i{font-size:42px;margin-bottom:12px;display:block;}
+.empty p{font-size:14px;line-height:1.6;}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+.stat-card{background:var(--bg2);border-radius:var(--r);padding:12px;text-align:center;}
+.stat-num{font-size:22px;font-weight:500;}
+.stat-lbl{font-size:12px;color:var(--text2);margin-top:2px;}
+.progress-bar{height:5px;border-radius:3px;background:var(--bg3);margin-top:8px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:3px;background:var(--teal);transition:width .4s ease;}
+.pending-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);display:inline-block;vertical-align:middle;margin-left:4px;}
+.view{display:none;}
+.view.active{display:block;}
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--text2);cursor:pointer;margin-bottom:18px;padding:4px 0;}
+.back-btn:hover{color:var(--text);}
+.emeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.pbox{background:var(--bg2);border-radius:var(--rl);padding:8px;margin-bottom:20px;}
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:6px 12px;margin-bottom:14px;}
+.search-bar i{color:var(--text2);font-size:16px;}
+.search-bar input{border:none;background:transparent;padding:0;font-size:14px;outline:none;flex:1;color:var(--text);}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2C2A;color:#f0efea;padding:10px 20px;border-radius:20px;font-size:13px;z-index:999;animation:fadeUp .2s ease;pointer-events:none;white-space:nowrap;}
+@keyframes fadeUp{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.loading{display:flex;align-items:center;justify-content:center;padding:48px;color:var(--text2);}
+.loading i{font-size:28px;animation:spin .8s linear infinite;}
+@media(max-width:600px){.content{padding:14px;}.stats-row{gap:8px;}.stat-num{font-size:20px;}.card{padding:12px;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo"><i class="ti ti-clipboard-check"></i></div>
+      <span class="topbar-title">Asistencia</span>
+    </div>
+    <div id="syncBadge" class="sync-badge s-online" onclick="toggleOnline()" title="Toca para simular modo offline">
+      <i class="ti ti-wifi"></i><span>En línea</span>
+    </div>
+  </div>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showTab('projects')" id="tab-projects"><i class="ti ti-folder"></i>Proyectos</button>
+    <button class="nav-btn" onclick="showTab('events')" id="tab-events"><i class="ti ti-calendar-event"></i>Eventos</button>
+    <button class="nav-btn" onclick="showTab('pending')" id="tab-pending"><i class="ti ti-cloud-upload"></i>Pendientes</button>
+  </nav>
+  <div class="content">
+    <div id="view-projects" class="view active">
+      <div class="sh"><span class="st">Proyectos</span>
+        <button class="btn btn-primary btn-sm" onclick="openModal('newProject')"><i class="ti ti-plus"></i>Nuevo</button>
+      </div>
+      <div class="search-bar"><i class="ti ti-search"></i>
+        <input type="text" id="search-projects" placeholder="Buscar proyectos..." oninput="renderProjects()">
+      </div>
+      <div id="projects-list"></div>
+    </div>
+    <div id="view-project-detail" class="view">
+      <div class="back-btn" onclick="goBack('projects')"><i class="ti ti-arrow-left"></i>Proyectos</div>
+      <div id="project-detail-content"></div>
+    </div>
+    <div id="view-events" class="view">
+      <div class="sh"><span class="st">Todos los eventos</span>
+        <button class="btn btn-primary btn-sm" onclick="openModal('newEvent')"><i class="ti ti-plus"></i>Nuevo</button>
+      </div>
+      <div id="events-list"></div>
+    </div>
+    <div id="view-attendance" class="view">
+      <div class="back-btn" id="att-back-btn"><i class="ti ti-arrow-left"></i>Volver</div>
+      <div id="attendance-content"></div>
+    </div>
+    <div id="view-pending" class="view">
+      <div class="sh"><span class="st">Sin sincronizar</span>
+        <button class="btn btn-sm" onclick="doSync()" id="sync-btn"><i class="ti ti-refresh"></i>Sincronizar ahora</button>
+      </div>
+      <div id="pending-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modales -->
+<div id="modal-overlay" style="display:none">
+  <div id="modal-newProject" class="overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-title">Nuevo proyecto</div>
+      <label>Nombre</label><input type="text" id="np-name" placeholder="Ej: Clase de Matemáticas 5B">
+      <label>Descripción (opcional)</label><input type="text" id="np-desc" placeholder="Descripción breve">
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="createProject()">Crear</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-newPerson" class="overlay" style="display:none">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-title" style="margin-bottom: 8px;">Agregar persona al proyecto</div>
+      
+      <!-- Pestañas -->
+      <div style="display:flex; border-bottom: 0.5px solid var(--border); margin-bottom: 16px;">
+        <button id="tab-opt-existing" class="nav-btn active" onclick="setPersonModalTab('existing')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-user-check" style="font-size:16px;"></i>Existente</button>
+        <button id="tab-opt-new" class="nav-btn" onclick="setPersonModalTab('new')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-user-plus" style="font-size:16px;"></i>Nueva</button>
+        <button id="tab-opt-csv" class="nav-btn" onclick="setPersonModalTab('csv')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-file-upload" style="font-size:16px;"></i>CSV</button>
+      </div>
+      
+      <!-- Contenido Pestaña: Existente -->
+      <div id="person-tab-existing" class="modal-tab-content">
+        <label>Seleccionar persona</label>
+        <select id="select-existing-person" style="margin-bottom: 12px;"></select>
+        <div id="no-existing-msg" style="display:none; font-size: 13px; color: var(--text2); text-align: center; padding: 16px 8px;">
+          No hay más personas disponibles para asignar. ¡Registra una nueva!
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeModal()">Cancelar</button>
+          <button id="btn-assign-existing" class="btn btn-primary" onclick="assignExistingPerson()">Asignar</button>
+        </div>
+      </div>
+      
+      <!-- Contenido Pestaña: Nueva -->
+      <div id="person-tab-new" class="modal-tab-content" style="display:none;">
+        <label>Nombres</label><input type="text" id="person-nombres" placeholder="Ej: Ana Maria">
+        <label>Apellidos</label><input type="text" id="person-apellidos" placeholder="Ej: López Gómez">
+        <label>Cédula</label><input type="text" id="person-cedula" placeholder="Ej: 10203040">
+        <label>Cargo</label><input type="text" id="person-cargo" placeholder="Ej: Ingeniera, Estudiante">
+        <label>Correo (opcional)</label><input type="email" id="person-correo" placeholder="Ej: ana@example.com">
+        <label>Celular (opcional)</label><input type="text" id="person-celular" placeholder="Ej: 3001234567">
+        <div class="modal-actions">
+          <button class="btn" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="createNewPerson()">Crear y Asignar</button>
+        </div>
+      </div>
+      
+      <!-- Contenido Pestaña: CSV -->
+      <div id="person-tab-csv" class="modal-tab-content" style="display:none;">
+        <p style="font-size: 13px; color: var(--text2); margin-bottom: 12px;">
+          Carga un archivo CSV con las columnas: <code style="background:var(--bg2); padding: 2px 4px; border-radius: 4px;">nombres,apellidos,cedula,cargo,correo,celular</code>
+        </p>
+        <div style="margin-bottom: 16px;">
+          <a href="#" onclick="downloadCsvTemplate(event)" class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 4px; color: var(--purple); text-decoration: none; border-color: var(--purple);"><i class="ti ti-download"></i>Descargar plantilla CSV</a>
+        </div>
+        <label>Archivo CSV</label>
+        <input type="file" id="person-csv-file" accept=".csv" style="padding: 8px 4px;">
+        <div class="modal-actions">
+          <button class="btn" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="uploadCsvFile()">Importar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="modal-newEvent" class="overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-title">Nuevo evento</div>
+      <label>Nombre</label><input type="text" id="ev-name" placeholder="Ej: Sesión #3, Reunión mensual">
+      <label>Proyecto</label><select id="ev-project"></select>
+      <label>Fecha</label><input type="date" id="ev-date">
+      <label>Notas (opcional)</label><input type="text" id="ev-notes" placeholder="Observaciones">
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="createNewEvent()">Crear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Configuración ────────────────────────────────────────────────────────────
+const API = window.location.origin + '/api';   // mismo origen que el servidor
+
+// ─── Estado local (cache offline) ────────────────────────────────────────────
+const COLORS = ['purple','teal','blue','coral'];
+const colorFor = i => COLORS[i % COLORS.length];
+const initials = n => n.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
+const fmtDate = d => { try { return new Date(d+'T12:00:00').toLocaleDateString('es-CO',{weekday:'short',year:'numeric',month:'short',day:'numeric'}); } catch(e){return d;} };
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+let cache = { projects:[], persons:[], events:[], attendance:{}, project_persons:[] };
+let pendingSync = [];   // cambios offline pendientes
+let online = true;
+let currentProject = null;
+let currentEvent = null;
+
+function saveLocal() {
+  try { localStorage.setItem('att_cache', JSON.stringify({cache, pendingSync})); } catch(e){}
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem('att_cache');
+    if(raw) { 
+      const d=JSON.parse(raw); 
+      cache=d.cache||cache; 
+      cache.project_persons = cache.project_persons || [];
+      pendingSync=d.pendingSync||[]; 
+    }
+  } catch(e){}
+}
+
+// ─── Sync badge ───────────────────────────────────────────────────────────────
+function setSyncBadge(state) {
+  const b = document.getElementById('syncBadge');
+  const states = {
+    online: ['s-online','<i class="ti ti-wifi"></i><span>En línea</span>'],
+    offline: ['s-offline','<i class="ti ti-wifi-off"></i><span>Sin conexión</span>'],
+    syncing: ['s-syncing','<i class="ti ti-refresh" style="animation:spin .8s linear infinite"></i><span>Sincronizando…</span>'],
+  };
+  b.className = 'sync-badge '+states[state][0];
+  b.innerHTML = states[state][1];
+}
+
+function toggleOnline() {
+  online = !online;
+  setSyncBadge(online ? 'online' : 'offline');
+  showToast(online ? 'Modo online activado' : 'Modo offline — cambios guardados localmente');
+  if(online) autoSync();
+}
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+async function apiFetch(method, path, body) {
+  const opts = { method, headers:{'Content-Type':'application/json'} };
+  if(body) opts.body = JSON.stringify(body);
+  const res = await fetch(API+path, opts);
+  if(!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.detail||res.statusText); }
+  if(res.status===204) return null;
+  return res.json();
+}
+
+// ─── Sincronización con servidor ─────────────────────────────────────────────
+async function fetchAll() {
+  const [projects, events, persons, projectPersons] = await Promise.all([
+    apiFetch('GET','/projects'),
+    apiFetch('GET','/events'),
+    apiFetch('GET','/persons'),
+    apiFetch('GET','/project-persons'),
+  ]);
+  cache.projects = projects;
+  cache.events = events;
+  cache.persons = persons;
+  cache.project_persons = projectPersons || [];
+  saveLocal();
+}
+
+async function autoSync() {
+  if(!online || !pendingSync.length) return;
+  setSyncBadge('syncing');
+  try {
+    // Construir payload
+    const payload = { projects:[], persons:[], events:[], attendance:{}, assignments:[], unassignments:[] };
+    for(const op of pendingSync) {
+      if(op.type==='project')       payload.projects.push(op.data);
+      if(op.type==='person')        payload.persons.push(op.data);
+      if(op.type==='event')         payload.events.push(op.data);
+      if(op.type==='assign')        payload.assignments.push(op.data);
+      if(op.type==='unassign')      payload.unassignments.push(op.data);
+      if(op.type==='attendance'){
+        const {event_id, person_id, present} = op.data;
+        if(!payload.attendance[event_id]) payload.attendance[event_id]={};
+        payload.attendance[event_id][person_id] = present;
+      }
+    }
+    const res = await apiFetch('POST','/sync', payload);
+    const total = Object.values(res.synced).reduce((a,b)=>a+b,0);
+    pendingSync = [];
+    await fetchAll();
+    saveLocal();
+    setSyncBadge('online');
+    updatePendingTab();
+    showToast(`✓ ${total} cambio${total!==1?'s':''} sincronizado${total!==1?'s':''}`);
+    // Re-render vista activa
+    const active = document.querySelector('.view.active');
+    if(active?.id==='view-projects') renderProjects();
+    if(active?.id==='view-events')   renderAllEvents();
+    if(active?.id==='view-pending')  renderPending();
+    if(active?.id==='view-project-detail') renderProjectDetail(currentProject);
+    if(active?.id==='view-attendance')     renderAttendance();
+  } catch(e) {
+    setSyncBadge('offline');
+    showToast('Error al sincronizar: '+e.message);
+  }
+}
+
+async function doSync() {
+  if(!online) { showToast('Sin conexión. Activa internet primero.'); return; }
+  if(!pendingSync.length) { showToast('Todo ya está sincronizado.'); return; }
+  await autoSync();
+}
+
+// ─── Navegar ──────────────────────────────────────────────────────────────────
+function showTab(tab) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('view-'+tab).classList.add('active');
+  if(tab==='projects') renderProjects();
+  else if(tab==='events') renderAllEvents();
+  else if(tab==='pending') renderPending();
+}
+function goBack(to) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  if(to==='projects') { document.getElementById('view-projects').classList.add('active'); renderProjects(); }
+  else if(to==='events') { document.getElementById('view-events').classList.add('active'); renderAllEvents(); }
+  else if(to==='project-detail') { document.getElementById('view-project-detail').classList.add('active'); renderProjectDetail(currentProject); }
+}
+function openModal(name) {
+  document.getElementById('modal-overlay').style.display='flex';
+  document.getElementById('modal-'+name).style.display='flex';
+  if(name==='newEvent') {
+    const sel=document.getElementById('ev-project');
+    sel.innerHTML=cache.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    if(currentProject) sel.value=currentProject.id;
+    document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
+  }
+  setTimeout(()=>{ const f=document.querySelector(`#modal-${name} input`); if(f)f.focus(); },50);
+}
+function closeModal() {
+  document.getElementById('modal-overlay').style.display='none';
+  document.querySelectorAll('.overlay').forEach(m=>m.style.display='none');
+  [
+    'np-name','np-desc','person-name','person-role','ev-name','ev-notes',
+    'person-nombres', 'person-apellidos', 'person-cedula', 'person-cargo', 'person-correo', 'person-celular', 'person-csv-file'
+  ].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
+}
+document.getElementById('modal-overlay').addEventListener('click',e=>{ if(e.target.id==='modal-overlay') closeModal(); });
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  document.querySelector('.toast')?.remove();
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(()=>t.remove(),300); },2500);
+}
+
+// ─── Badge pendientes ─────────────────────────────────────────────────────────
+function updatePendingTab() {
+  const n=pendingSync.length;
+  document.getElementById('tab-pending').innerHTML =
+    `<i class="ti ti-cloud-upload"></i>Pendientes${n>0?` <span style="background:var(--amber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px">${n}</span>`:''}`;
+}
+
+// ─── CRUD (escribe en cache + pendingSync si offline, o llama API si online) ──
+async function createProject() {
+  const name=document.getElementById('np-name').value.trim(); if(!name) return;
+  const data={ id:uid(), name, description:document.getElementById('np-desc').value.trim() };
+  if(online) {
+    try { const p=await apiFetch('POST','/projects',data); cache.projects.unshift(p); saveLocal(); }
+    catch(e){ showToast('Error: '+e.message); return; }
+  } else {
+    cache.projects.unshift({...data, created_at:new Date().toISOString()});
+    pendingSync.push({type:'project',data}); saveLocal(); updatePendingTab();
+  }
+  closeModal(); renderProjects(); showToast(`Proyecto "${name}" creado`);
+}
+
+async function deleteProject(id) {
+  const p=cache.projects.find(x=>x.id===id);
+  if(!confirm(`¿Eliminar "${p?.name}"?`)) return;
+  if(online) {
+    try { await apiFetch('DELETE',`/projects/${id}`); }
+    catch(e){ showToast('Error: '+e.message); return; }
+  }
+  cache.projects=cache.projects.filter(x=>x.id!==id);
+  cache.project_persons=(cache.project_persons || []).filter(x=>x.project_id!==id);
+  const eids=cache.events.filter(e=>e.project_id===id).map(e=>e.id);
+  cache.events=cache.events.filter(e=>e.project_id!==id);
+  eids.forEach(eid=>delete cache.attendance[eid]);
+  saveLocal(); renderProjects(); showToast('Proyecto eliminado');
+}
+
+function openProject(id) {
+  currentProject=cache.projects.find(p=>p.id===id);
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-project-detail').classList.add('active');
+  renderProjectDetail(currentProject);
+}
+
+function openPersonModal() {
+  setPersonModalTab('existing');
+  
+  // Populate existing persons select
+  const projectPersonIds = (cache.project_persons || [])
+    .filter(ap => ap.project_id === currentProject.id)
+    .map(ap => ap.person_id);
+  
+  const availablePersons = cache.persons.filter(person => !projectPersonIds.includes(person.id));
+  
+  const select = document.getElementById('select-existing-person');
+  const noMsg = document.getElementById('no-existing-msg');
+  const btnAssign = document.getElementById('btn-assign-existing');
+  
+  if (availablePersons.length === 0) {
+    select.style.display = 'none';
+    noMsg.style.display = 'block';
+    btnAssign.disabled = true;
+  } else {
+    select.style.display = 'block';
+    noMsg.style.display = 'none';
+    btnAssign.disabled = false;
+    select.innerHTML = availablePersons.map(p => 
+      `<option value="${p.id}">${p.nombres || p.name || ''} ${p.apellidos || ''} (${p.cedula || 'Sin ID'}) - ${p.cargo || p.role || 'Sin cargo'}</option>`
+    ).join('');
+  }
+  
+  openModal('newPerson');
+}
+
+function setPersonModalTab(tab) {
+  document.querySelectorAll('.modal-tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById('person-tab-' + tab).style.display = 'block';
+  
+  document.querySelectorAll('#modal-newPerson .nav-btn').forEach(btn => {
+    btn.classList.remove('active');
+    btn.style.borderBottomColor = 'transparent';
+    btn.style.color = 'var(--text2)';
+  });
+  const activeBtn = document.getElementById('tab-opt-' + tab);
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    activeBtn.style.borderBottomColor = 'var(--purple)';
+    activeBtn.style.color = 'var(--purple)';
+  }
+}
+
+async function assignExistingPerson() {
+  const select = document.getElementById('select-existing-person');
+  const personId = select.value;
+  if (!personId || !currentProject) return;
+  
+  const person = cache.persons.find(p => p.id === personId);
+  const nombres_completos = person ? `${person.nombres || person.name || ''} ${person.apellidos || ''}` : 'Persona';
+  
+  const assoc = { project_id: currentProject.id, person_id: personId };
+  
+  if (online) {
+    try {
+      await apiFetch('POST', `/projects/${currentProject.id}/persons/${personId}`);
+      cache.project_persons.push(assoc);
+      saveLocal();
+    } catch (e) {
+      showToast('Error: ' + e.message);
+      return;
+    }
+  } else {
+    cache.project_persons.push(assoc);
+    pendingSync.push({ type: 'assign', data: assoc });
+    saveLocal();
+    updatePendingTab();
+  }
+  
+  closeModal();
+  renderProjectDetail(currentProject);
+  showToast(`${nombres_completos} asignado/a al proyecto`);
+}
+
+async function createNewPerson() {
+  const nombres = document.getElementById('person-nombres').value.trim();
+  const apellidos = document.getElementById('person-apellidos').value.trim();
+  const cedula = document.getElementById('person-cedula').value.trim();
+  const cargo = document.getElementById('person-cargo').value.trim();
+  const correo = document.getElementById('person-correo').value.trim();
+  const celular = document.getElementById('person-celular').value.trim();
+  
+  if (!nombres || !apellidos || !cedula || !cargo || !currentProject) {
+    showToast('Los campos nombres, apellidos, cédula y cargo son obligatorios.');
+    return;
+  }
+  
+  const personId = uid();
+  const personData = {
+    id: personId,
+    nombres,
+    apellidos,
+    cedula,
+    cargo,
+    correo,
+    celular,
+    project_id: currentProject.id
+  };
+  
+  if (online) {
+    try {
+      const savedPerson = await apiFetch('POST', '/persons', personData);
+      cache.persons.push(savedPerson);
+      cache.project_persons.push({ project_id: currentProject.id, person_id: savedPerson.id });
+      saveLocal();
+    } catch (e) {
+      showToast('Error: ' + e.message);
+      return;
+    }
+  } else {
+    cache.persons.push(personData);
+    cache.project_persons.push({ project_id: currentProject.id, person_id: personId });
+    pendingSync.push({ type: 'person', data: personData });
+    saveLocal();
+    updatePendingTab();
+  }
+  
+  closeModal();
+  renderProjectDetail(currentProject);
+  showToast(`${nombres} ${apellidos} creado/a y asignado/a`);
+}
+
+async function deletePerson(id) {
+  const p=cache.persons.find(x=>x.id===id);
+  const nombres_completos = p ? `${p.nombres || p.name || ''} ${p.apellidos || ''}` : 'esta persona';
+  if(!confirm(`¿Desasignar a "${nombres_completos}" del proyecto?`)) return;
+  
+  const assoc = { project_id: currentProject.id, person_id: id };
+  
+  if(online) {
+    try { 
+      await apiFetch('DELETE',`/projects/${currentProject.id}/persons/${id}`); 
+      cache.project_persons = (cache.project_persons || []).filter(x => !(x.project_id === currentProject.id && x.person_id === id));
+      saveLocal();
+    }
+    catch(e){ showToast('Error: '+e.message); return; }
+  } else {
+    cache.project_persons = (cache.project_persons || []).filter(x => !(x.project_id === currentProject.id && x.person_id === id));
+    pendingSync.push({ type: 'unassign', data: assoc });
+    saveLocal();
+    updatePendingTab();
+  }
+  renderProjectDetail(currentProject); 
+  showToast('Persona desasignada del proyecto');
+}
+
+function downloadCsvTemplate(event) {
+  event.preventDefault();
+  window.location.href = API + '/persons/template';
+}
+
+async function uploadCsvFile() {
+  const fileInput = document.getElementById('person-csv-file');
+  if (!fileInput.files || fileInput.files.length === 0) {
+    showToast('Selecciona un archivo CSV para subir.');
+    return;
+  }
+  
+  if (!online) {
+    showToast('La importación por CSV requiere conexión a internet.');
+    return;
+  }
+  
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    const res = await fetch(`${API}/projects/${currentProject.id}/persons/upload-csv`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.detail || res.statusText);
+    }
+    
+    const data = await res.json();
+    showToast(`CSV importado: ${data.created} creados, ${data.assigned} asignados`);
+    
+    await fetchAll();
+    closeModal();
+    renderProjectDetail(currentProject);
+  } catch (e) {
+    showToast('Error al importar CSV: ' + e.message);
+  }
+}
+
+async function createNewEvent() {
+  const name=document.getElementById('ev-name').value.trim();
+  const project_id=document.getElementById('ev-project').value;
+  const date=document.getElementById('ev-date').value;
+  if(!name||!project_id) return;
+  const data={ id:uid(), name, project_id, date, notes:document.getElementById('ev-notes').value.trim() };
+  if(online) {
+    try { const ev=await apiFetch('POST','/events',data); cache.events.unshift(ev); saveLocal(); }
+    catch(e){ showToast('Error: '+e.message); return; }
+  } else {
+    cache.events.unshift({...data,created_at:new Date().toISOString()});
+    pendingSync.push({type:'event',data}); saveLocal(); updatePendingTab();
+  }
+  closeModal();
+  if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+  else renderAllEvents();
+  showToast(`Evento "${name}" creado`);
+}
+
+async function deleteEvent(id) {
+  const e=cache.events.find(x=>x.id===id);
+  if(!confirm(`¿Eliminar "${e?.name}"?`)) return;
+  if(online) {
+    try { await apiFetch('DELETE',`/events/${id}`); }
+    catch(e){ showToast('Error: '+e.message); return; }
+  }
+  cache.events=cache.events.filter(x=>x.id!==id);
+  delete cache.attendance[id]; saveLocal();
+  if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+  else renderAllEvents();
+  showToast('Evento eliminado');
+}
+
+async function toggleAtt(personId) {
+  const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
+  att[personId]=!att[personId];
+  if(online) {
+    try {
+      await apiFetch('POST',`/events/${currentEvent.id}/attendance`,{records:[{person_id:personId,present:att[personId]}]});
+    } catch(e){ showToast('Error guardando: '+e.message); }
+  } else {
+    pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:personId,present:att[personId]}});
+    updatePendingTab();
+  }
+  saveLocal(); renderAttendance();
+}
+
+async function markAll(val) {
+  const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
+  const projectPersonIds = (cache.project_persons || [])
+    .filter(ap => ap.project_id === currentEvent.project_id)
+    .map(ap => ap.person_id);
+  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+  
+  persons.forEach(p=>{ att[p.id]=val; });
+  if(online) {
+    try {
+      await apiFetch('POST',`/events/${currentEvent.id}/attendance`,{records:persons.map(p=>({person_id:p.id,present:val}))});
+    } catch(e){ showToast('Error: '+e.message); }
+  } else {
+    persons.forEach(p=>pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:p.id,present:val}}));
+    updatePendingTab();
+  }
+  saveLocal(); renderAttendance();
+  showToast(val?'Todos marcados como presentes':'Todos marcados como ausentes');
+}
+
+// ─── Renders ──────────────────────────────────────────────────────────────────
+function renderProjects() {
+  const q=(document.getElementById('search-projects')?.value||'').toLowerCase();
+  const list=document.getElementById('projects-list');
+  let projs=cache.projects;
+  if(q) projs=projs.filter(p=>p.name.toLowerCase().includes(q)||(p.description||'').toLowerCase().includes(q));
+  if(!projs.length) {
+    list.innerHTML=`<div class="empty"><i class="ti ti-folder-off"></i><p>${q?'Sin resultados.':'No hay proyectos aún.<br>Crea el primero para empezar.'}</p></div>`;
+    return;
+  }
+  list.innerHTML=projs.map((p,i)=>{
+    const members = (cache.project_persons || [])
+      .filter(ap => ap.project_id === p.id).length;
+    const events=cache.events.filter(e=>e.project_id===p.id).length;
+    return `<div class="card" style="cursor:pointer" onclick="openProject('${p.id}')">
+      <div class="card-row">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0">
+          <div class="av av-${colorFor(cache.projects.indexOf(p))}" style="width:44px;height:44px;font-size:20px;flex-shrink:0"><i class="ti ti-folder"></i></div>
+          <div style="min-width:0"><div class="card-title">${p.name}</div><div class="card-sub">${p.description||'Sin descripción'}</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <span class="badge bp"><i class="ti ti-users"></i>${members}</span>
+          <span class="badge bt"><i class="ti ti-calendar"></i>${events}</span>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProject('${p.id}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderProjectDetail(p) {
+  if(!p) return;
+  const projectPersonIds = (cache.project_persons || [])
+    .filter(ap => ap.project_id === p.id)
+    .map(ap => ap.person_id);
+  const persons = cache.persons.filter(person => projectPersonIds.includes(person.id));
+  
+  const events=cache.events.filter(e=>e.project_id===p.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const evWithAtt=events.filter(e=>cache.attendance[e.id]&&Object.keys(cache.attendance[e.id]).length>0).length;
+  document.getElementById('project-detail-content').innerHTML=`
+    <div style="margin-bottom:20px">
+      <div style="font-size:20px;font-weight:500">${p.name}</div>
+      ${p.description?`<div style="font-size:14px;color:var(--text2);margin-top:2px">${p.description}</div>`:''}
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num">${persons.length}</div><div class="stat-lbl">Personas</div></div>
+      <div class="stat-card"><div class="stat-num">${events.length}</div><div class="stat-lbl">Eventos</div></div>
+      <div class="stat-card"><div class="stat-num">${evWithAtt}</div><div class="stat-lbl">Con asistencia</div></div>
+    </div>
+    <div class="sh" style="margin-top:8px"><span style="font-weight:500">Personas</span>
+      <button class="btn btn-sm" onclick="openPersonModal()"><i class="ti ti-user-plus"></i>Agregar</button>
+    </div>
+    <div class="pbox">
+      ${persons.length===0
+        ?`<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px">Sin personas. Agrega la primera.</div>`
+        :persons.map((person,i)=>`
+          <div class="person-row" style="cursor:default; align-items: flex-start; padding: 12px 10px;">
+            <div class="av av-${colorFor(i)}" style="margin-top: 2px;">${initials(person.nombres || person.name || 'P')}</div>
+            <div class="pinfo" style="margin-left: 10px;">
+              <div class="pname" style="font-weight:600;">${person.nombres || person.name || ''} ${person.apellidos || ''}</div>
+              <div style="font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">
+                <span><strong>Cédula:</strong> ${person.cedula || 'N/A'}</span>
+                <span><strong>Cargo:</strong> ${person.cargo || person.role || 'Sin cargo'}</span>
+                ${person.correo ? `<span><strong>Correo:</strong> ${person.correo}</span>` : ''}
+                ${person.celular ? `<span><strong>Celular:</strong> ${person.celular}</span>` : ''}
+              </div>
+            </div>
+            <button class="btn btn-sm btn-danger" onclick="deletePerson('${person.id}')" title="Desasignar del proyecto" style="align-self: center;"><i class="ti ti-user-minus"></i></button>
+          </div>`).join('')}
+    </div>
+    <div class="sh"><span style="font-weight:500">Eventos</span>
+      <button class="btn btn-sm btn-primary" onclick="openModal('newEvent')"><i class="ti ti-plus"></i>Nuevo</button>
+    </div>
+    ${events.length===0
+      ?`<div class="empty" style="padding:28px"><i class="ti ti-calendar-off"></i><p>Sin eventos. Crea el primero.</p></div>`
+      :events.map(ev=>{
+        const att=cache.attendance[ev.id]||{};
+        const present=Object.values(att).filter(v=>v).length;
+        const total=persons.length;
+        const pct=total?Math.round(present/total*100):0;
+        return `<div class="card">
+          <div class="card-row">
+            <div style="min-width:0;flex:1">
+              <div class="card-title">${ev.name}</div>
+              <div class="emeta">
+                <span class="badge bgr"><i class="ti ti-calendar"></i>${fmtDate(ev.date)}</span>
+                ${ev.notes?`<span class="badge bgr">${ev.notes}</span>`:''}
+                <span class="badge ${pct===100?'bg2c':pct>0?'ba':'bgr'}">${present}/${total} presentes</span>
+              </div>
+              <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
+              <button class="btn btn-sm btn-primary" onclick="openAttendance('${ev.id}','project-detail')"><i class="ti ti-clipboard-list"></i>Pasar</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteEvent('${ev.id}')"><i class="ti ti-trash"></i></button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+  `;
+}
+
+function renderAllEvents() {
+  const list=document.getElementById('events-list');
+  if(!cache.events.length) { list.innerHTML=`<div class="empty"><i class="ti ti-calendar-off"></i><p>Sin eventos todavía.<br>Créalos desde un proyecto.</p></div>`; return; }
+  const sorted=[...cache.events].sort((a,b)=>b.date.localeCompare(a.date));
+  list.innerHTML=sorted.map(ev=>{
+    const proj=cache.projects.find(p=>p.id===ev.project_id);
+    const projectPersonIds = (cache.project_persons || [])
+      .filter(ap => ap.project_id === ev.project_id)
+      .map(ap => ap.person_id);
+    const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+    const att=cache.attendance[ev.id]||{};
+    const present=Object.values(att).filter(v=>v).length;
+    const total=persons.length;
+    const pct=total?Math.round(present/total*100):0;
+    return `<div class="card">
+      <div class="card-row">
+        <div style="min-width:0;flex:1">
+          <div class="card-title">${ev.name}</div>
+          <div class="emeta">
+            ${proj?`<span class="badge bp"><i class="ti ti-folder"></i>${proj.name}</span>`:''}
+            <span class="badge bgr"><i class="ti ti-calendar"></i>${fmtDate(ev.date)}</span>
+            <span class="badge ${pct===100?'bg2c':pct>0?'ba':'bgr'}">${present}/${total} presentes</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+        </div>
+        <div style="flex-shrink:0;margin-left:12px">
+          <button class="btn btn-sm btn-primary" onclick="openAttendance('${ev.id}','events')"><i class="ti ti-clipboard-list"></i>Pasar</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openAttendance(eventId, backTo) {
+  currentEvent=cache.events.find(e=>e.id===eventId);
+  // Cargar asistencia del servidor si está online
+  if(online && !cache.attendance[eventId]) {
+    try { cache.attendance[eventId]=await apiFetch('GET',`/events/${eventId}/attendance`); saveLocal(); }
+    catch(e){}
+  }
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-attendance').classList.add('active');
+  const proj=cache.projects.find(p=>p.id===currentEvent.project_id);
+  document.getElementById('att-back-btn').onclick=()=>goBack(backTo);
+  document.getElementById('att-back-btn').innerHTML=`<i class="ti ti-arrow-left"></i>${backTo==='project-detail'?proj?.name||'Proyecto':'Eventos'}`;
+  renderAttendance();
+}
+
+function renderAttendance() {
+  const ev=currentEvent;
+  const proj=cache.projects.find(p=>p.id===ev.project_id);
+  const projectPersonIds = (cache.project_persons || [])
+    .filter(ap => ap.project_id === ev.project_id)
+    .map(ap => ap.person_id);
+  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+  
+  const att=cache.attendance[ev.id]||{};
+  const present=persons.filter(p=>att[p.id]).length;
+  const absent=persons.length-present;
+  const pct=persons.length?Math.round(present/persons.length*100):0;
+  document.getElementById('attendance-content').innerHTML=`
+    <div style="margin-bottom:16px">
+      <div style="font-size:20px;font-weight:500">${ev.name}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:3px">${proj?proj.name+' · ':''}${fmtDate(ev.date)}</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card" style="background:var(--gl)"><div class="stat-num" style="color:var(--gd)">${present}</div><div class="stat-lbl">Presentes</div></div>
+      <div class="stat-card" style="background:var(--rl2)"><div class="stat-num" style="color:var(--rd)">${absent}</div><div class="stat-lbl">Ausentes</div></div>
+      <div class="stat-card"><div class="stat-num">${pct}%</div><div class="stat-lbl">Asistencia</div></div>
+    </div>
+    <div class="progress-bar" style="margin-bottom:16px"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="markAll(true)"><i class="ti ti-checks"></i>Todos presentes</button>
+      <button class="btn btn-sm" onclick="markAll(false)"><i class="ti ti-x"></i>Todos ausentes</button>
+    </div>
+    ${persons.length===0
+      ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este proyecto no tiene personas.</p></div>`
+      :`<div class="pbox">${persons.map((p,i)=>{
+          const isPresent=!!att[p.id];
+          return `<div class="person-row ${isPresent?'present':'absent'}" onclick="toggleAtt('${p.id}')">
+            <div class="av av-${colorFor(i)}">${initials(p.nombres || p.name || 'P')}</div>
+            <div class="pinfo">
+              <div class="pname">${p.nombres || p.name || ''} ${p.apellidos || ''}</div>
+              <div class="prole">${p.cargo || p.role || 'Sin cargo'}</div>
+            </div>
+            <div class="att-toggle ${isPresent?'att-y':'att-n'}"><i class="ti ti-${isPresent?'check':'x'}"></i></div>
+          </div>`;
+        }).join('')}</div>`}
+  `;
+}
+
+function renderPending() {
+  const list=document.getElementById('pending-list');
+  if(!pendingSync.length) { list.innerHTML=`<div class="empty"><i class="ti ti-cloud-check"></i><p>Todo está sincronizado.</p></div>`; return; }
+  const labels={ project:'Proyecto creado', person:'Persona creada', event:'Evento creado', attendance:'Asistencia actualizada', assign:'Persona asignada', unassign:'Persona desasignada' };
+  list.innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:14px">${pendingSync.length} cambio${pendingSync.length!==1?'s':''} pendiente${pendingSync.length!==1?'s':''}. Activa internet y pulsa "Sincronizar ahora".</div>`
+    +pendingSync.map(s=>`
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="av" style="background:var(--al);color:var(--ad)"><i class="ti ti-clock-upload"></i></div>
+          <div>
+            <div style="font-size:14px;font-weight:500">${labels[s.type]||s.type}</div>
+            <div style="font-size:12px;color:var(--text2)">${s.data?.name || (s.data?.nombres ? s.data.nombres + ' ' + (s.data.apellidos || '') : '') || s.data?.person_id || ''}</div>
+          </div>
+        </div>
+      </div>`).join('');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') closeModal();
+  if(e.key==='Enter' && document.getElementById('modal-overlay').style.display==='flex') {
+    document.querySelectorAll('.modal-actions .btn-primary').forEach(b=>b.click());
+  }
+});
+
+async function init() {
+  loadLocal();
+  updatePendingTab();
+  renderProjects();
+  // Intentar cargar desde servidor
+  try {
+    await fetchAll();
+    renderProjects();
+    setSyncBadge('online');
+  } catch(e) {
+    online = false;
+    setSyncBadge('offline');
+    showToast('Sin conexión al servidor — modo offline');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
