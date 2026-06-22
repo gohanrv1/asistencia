@@ -70,17 +70,31 @@ class Attendance(Base):
 
 # Verificación de esquema para recreación automática en desarrollo
 try:
+    print("🔍 Verificando esquema de base de datos...")
     with engine.connect() as conn:
         conn.execute(text("SELECT cedula FROM persons LIMIT 1"))
-except Exception:
+    print("✅ Esquema de base de datos OK")
+except Exception as e:
+    print(f"⚠️  Esquema necesita actualización: {str(e)[:100]}")
     # Si falla porque la columna 'cedula' no existe (o si la tabla no existe),
     # drop y create para actualizar el esquema.
     Base.metadata.drop_all(bind=engine)
+    print("🔄 Recreando tablas...")
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    print("✅ Base de datos inicializada correctamente")
+except Exception as e:
+    print(f"❌ Error al crear tablas: {str(e)}")
+    raise
 
 # ── App FastAPI ───────────────────────────────────────────────────────────────
-app = FastAPI(title="Asistencia API", version="1.0.0")
+app = FastAPI(
+    title="Asistencia API", 
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,12 +103,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Startup Event ─────────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Aplicación FastAPI iniciada correctamente")
+    print("📊 Endpoints disponibles en /docs")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("🛑 Cerrando aplicación FastAPI...")
+
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/health")
 @app.get("/api/health")
 def health_check():
     """Health check endpoint para Easypanel/Docker"""
-    return {"status": "ok", "service": "asistencia"}
+    return {"status": "ok", "service": "asistencia", "timestamp": datetime.utcnow().isoformat()}
 
 def get_db():
     db = SessionLocal()

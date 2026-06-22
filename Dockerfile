@@ -21,9 +21,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/
 COPY start.sh /app/start.sh
+COPY start-gunicorn.sh /app/start-gunicorn.sh
+COPY gunicorn.conf.py /app/gunicorn.conf.py
 
-# Hacer ejecutable el script de inicio
-RUN chmod +x /app/start.sh
+# Hacer ejecutables los scripts de inicio
+RUN chmod +x /app/start.sh /app/start-gunicorn.sh
 
 # Crear el directorio para datos persistentes (SQLite)
 RUN mkdir -p /app/backend/data
@@ -34,5 +36,6 @@ EXPOSE 8000
 # Configurar variable de entorno por defecto para la base de datos (con persistencia en el volumen)
 ENV DATABASE_URL=sqlite:////app/backend/data/asistencia.db
 
-# Usar el script de inicio
-CMD ["/app/start.sh"]
+# Usar Gunicorn para mayor estabilidad en producción
+# Para usar Uvicorn simple, cambia a: CMD ["/app/start.sh"]
+CMD ["/app/start-gunicorn.sh"]

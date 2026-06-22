@@ -24,6 +24,15 @@ mkdir -p /app/backend/data
 ls -la /app/backend/data/
 
 echo ""
-echo "🔥 Iniciando Uvicorn..."
+echo "🔥 Iniciando Uvicorn con configuración de producción..."
 cd /app/backend
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info
+
+# Configurar para trabajar con proxy reverso (Easypanel)
+exec uvicorn main:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --log-level info \
+  --proxy-headers \
+  --forwarded-allow-ips='*' \
+  --timeout-keep-alive 75 \
+  --timeout-graceful-shutdown 30
