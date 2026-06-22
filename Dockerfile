@@ -36,6 +36,5 @@ EXPOSE 8000
 # Configurar variable de entorno por defecto para la base de datos (con persistencia en el volumen)
 ENV DATABASE_URL=sqlite:////app/backend/data/asistencia.db
 
-# Usar Gunicorn para mayor estabilidad en producción
-# Para usar Uvicorn simple, cambia a: CMD ["/app/start.sh"]
-CMD ["/app/start-gunicorn.sh"]
+# Usar Uvicorn simple (más estable para este caso)
+CMD ["/app/start.sh"]
