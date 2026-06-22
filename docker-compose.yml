@@ -11,3 +11,9 @@ services:
     environment:
       - DATABASE_URL=sqlite:////app/backend/data/asistencia.db
     restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

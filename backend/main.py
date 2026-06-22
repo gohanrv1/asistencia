@@ -89,6 +89,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Health Check ──────────────────────────────────────────────────────────────
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint para Easypanel/Docker"""
+    return {"status": "ok", "service": "asistencia"}
+
 def get_db():
     db = SessionLocal()
     try:
@@ -461,6 +468,23 @@ def sync_offline(payload: SyncPayload, db: Session = Depends(get_db)):
 
 # ── Servir frontend estático ──────────────────────────────────────────────────
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+print(f"🔍 Buscando frontend en: {frontend_path}")
+print(f"🔍 Frontend existe: {os.path.exists(frontend_path)}")
+
 if os.path.exists(frontend_path):
+    print(f"✅ Montando frontend desde {frontend_path}")
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+else:
+    print(f"⚠️  Advertencia: No se encontró el directorio frontend en {frontend_path}")
+    
+    # Fallback: servir un mensaje simple en la raíz
+    @app.get("/")
+    def root():
+        return {
+            "app": "Asistencia API",
+            "version": "1.0.0",
+            "status": "running",
+            "docs": "/docs",
+            "api": "/api"
+        }
 

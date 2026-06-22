@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el código del backend y del frontend
 COPY backend/ /app/backend/
 COPY frontend/ /app/frontend/
+COPY start.sh /app/start.sh
+
+# Hacer ejecutable el script de inicio
+RUN chmod +x /app/start.sh
 
 # Crear el directorio para datos persistentes (SQLite)
 RUN mkdir -p /app/backend/data
@@ -27,11 +31,8 @@ RUN mkdir -p /app/backend/data
 # Definir el puerto expuesto
 EXPOSE 8000
 
-# Cambiar al directorio de ejecución del backend
-WORKDIR /app/backend
-
 # Configurar variable de entorno por defecto para la base de datos (con persistencia en el volumen)
 ENV DATABASE_URL=sqlite:////app/backend/data/asistencia.db
 
-# Ejecutar la aplicación usando uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Usar el script de inicio
+CMD ["/app/start.sh"]
