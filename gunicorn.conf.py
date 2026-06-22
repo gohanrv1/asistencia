@@ -5,8 +5,8 @@ Configuración de Gunicorn para producción
 # Bind
 bind = "0.0.0.0:8000"
 
-# Workers
-workers = 2
+# Workers (reducido a 1 para evitar race conditions con SQLite)
+workers = 1
 worker_class = "uvicorn.workers.UvicornWorker"
 
 # Timeouts

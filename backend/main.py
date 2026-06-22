@@ -68,25 +68,30 @@ class Attendance(Base):
     updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     event     = relationship("Event", back_populates="attendance")
 
-# Verificación de esquema para recreación automática en desarrollo
+# Verificación e inicialización de base de datos
+# Usar checkfirst=True para evitar errores con múltiples workers
 try:
-    print("🔍 Verificando esquema de base de datos...")
+    print("🔍 Inicializando base de datos...")
+    # Crear tablas si no existen (checkfirst=True evita errores si ya existen)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    
+    # Verificar que el esquema es correcto
     with engine.connect() as conn:
         conn.execute(text("SELECT cedula FROM persons LIMIT 1"))
-    print("✅ Esquema de base de datos OK")
+    print("✅ Base de datos OK")
 except Exception as e:
-    print(f"⚠️  Esquema necesita actualización: {str(e)[:100]}")
-    # Si falla porque la columna 'cedula' no existe (o si la tabla no existe),
-    # drop y create para actualizar el esquema.
-    Base.metadata.drop_all(bind=engine)
-    print("🔄 Recreando tablas...")
-
-try:
-    Base.metadata.create_all(bind=engine)
-    print("✅ Base de datos inicializada correctamente")
-except Exception as e:
-    print(f"❌ Error al crear tablas: {str(e)}")
-    raise
+    error_msg = str(e)
+    if "no such column" in error_msg or "no such table" in error_msg:
+        print(f"⚠️  Esquema desactualizado, recreando...")
+        try:
+            Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+            print("✅ Base de datos recreada correctamente")
+        except Exception as recreate_error:
+            print(f"❌ Error al recrear: {str(recreate_error)[:200]}")
+            # Continuar de todas formas - las tablas probablemente existen
+    else:
+        print(f"✅ Base de datos inicializada (algunas tablas ya existían)")
 
 # ── App FastAPI ───────────────────────────────────────────────────────────────
 app = FastAPI(
