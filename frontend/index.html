@@ -139,6 +139,8 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
   <nav class="nav">
     <button class="nav-btn active" onclick="showTab('projects')" id="tab-projects"><i class="ti ti-folder"></i>Proyectos</button>
     <button class="nav-btn" onclick="showTab('events')" id="tab-events"><i class="ti ti-calendar-event"></i>Eventos</button>
+    <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard"><i class="ti ti-chart-pie"></i>Dashboard</button>
+    <button class="nav-btn" onclick="showTab('backup')" id="tab-backup"><i class="ti ti-database"></i>Backup</button>
     <button class="nav-btn" onclick="showTab('pending')" id="tab-pending"><i class="ti ti-cloud-upload"></i>Pendientes</button>
   </nav>
   <div class="content">
@@ -170,6 +172,25 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <button class="btn btn-sm" onclick="doSync()" id="sync-btn"><i class="ti ti-refresh"></i>Sincronizar ahora</button>
       </div>
       <div id="pending-list"></div>
+    </div>
+    <div id="view-dashboard" class="view">
+      <div class="sh"><span class="st">Dashboard</span></div>
+      <div id="dashboard-content">
+        <div class="loading"><i class="ti ti-chart-pie"></i> Cargando estadísticas...</div>
+      </div>
+    </div>
+    <div id="view-backup" class="view">
+      <div class="sh"><span class="st">Backup / Restaurar</span></div>
+      <div class="card">
+        <div style="margin-bottom:10px">Descarga una copia de la base de datos actual para guardarla localmente.</div>
+        <button class="btn btn-primary" onclick="downloadDB()"><i class="ti ti-download"></i> Descargar BD</button>
+      </div>
+      <div class="card">
+        <div style="margin-bottom:10px">Sube un archivo de base de datos (.db) para restaurar. Se creará un backup automático antes de reemplazar.</div>
+        <input type="file" id="db-file-input" accept=".db" style="margin-bottom:8px">
+        <div style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById('db-file-input').click()">Seleccionar archivo</button><button class="btn btn-primary" onclick="uploadDB()">Subir y Restaurar</button></div>
+        <div id="backup-msg" style="margin-top:10px;color:var(--text2)"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -408,6 +429,8 @@ function showTab(tab) {
   if(tab==='projects') renderProjects();
   else if(tab==='events') renderAllEvents();
   else if(tab==='pending') renderPending();
+  else if(tab==='dashboard') loadDashboard();
+  else if(tab==='backup') { /* nothing to load proactively */ }
 }
 function goBack(to) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -518,6 +541,66 @@ function openPersonModal() {
   }
   
   openModal('newPerson');
+}
+
+// ─── Dashboard & Backup / Restore ───────────────────────────────────────────
+async function loadDashboard(){
+  const el = document.getElementById('dashboard-content');
+  el.innerHTML = `<div class="loading"><i class="ti ti-chart-pie"></i> Cargando estadísticas...</div>`;
+  try{
+    const s = await apiFetch('GET','/stats');
+    el.innerHTML = `
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-num">${s.projects}</div><div class="stat-lbl">Proyectos</div></div>
+        <div class="stat-card"><div class="stat-num">${s.persons}</div><div class="stat-lbl">Personas</div></div>
+        <div class="stat-card"><div class="stat-num">${s.events}</div><div class="stat-lbl">Eventos</div></div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-num">${s.attendance_records}</div><div class="stat-lbl">Registros asistencia</div></div>
+        <div class="stat-card"><div class="stat-num">${s.attendance_present}</div><div class="stat-lbl">Presentes totales</div></div>
+        <div class="stat-card"><div class="stat-num">${s.attendance_pct}%</div><div class="stat-lbl">Tasa de asistencia</div></div>
+      </div>
+      <div class="card"><div style="font-weight:500;margin-bottom:8px">Últimos eventos</div>
+        ${s.recent_events.length? s.recent_events.map(ev=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:500">${ev.name}</div>
+              <div style="font-size:12px;color:var(--text2)">${ev.date}${ev.responsible?` · Responsable: ${ev.responsible}`:''}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:600">${ev.present}/${ev.expected}</div>
+              <div style="font-size:12px;color:var(--text2)">${ev.pct}%</div>
+            </div>
+          </div>`).join('') : '<div class="empty">No hay eventos recientes</div>'}
+      </div>
+    `;
+  }catch(e){ el.innerHTML = `<div class="card">Error al cargar estadísticas: ${e.message}</div>` }
+}
+
+function downloadDB(){
+  // For file download, simply navigate to the endpoint
+  const a = document.createElement('a');
+  a.href = API + '/db/download';
+  a.download = '';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+async function uploadDB(){
+  const inp = document.getElementById('db-file-input');
+  const msg = document.getElementById('backup-msg');
+  if(!inp.files || !inp.files[0]){ showToast('Selecciona un archivo .db'); return; }
+  const f = inp.files[0];
+  const form = new FormData(); form.append('file', f, f.name);
+  msg.textContent = 'Subiendo...';
+  try{
+    const res = await fetch(API + '/db/upload', { method: 'POST', body: form });
+    if(!res.ok){ const err = await res.text().catch(()=>res.statusText); throw new Error(err); }
+    const j = await res.json();
+    msg.textContent = j.message || 'Restauración completada.';
+    showToast('Base de datos restaurada. Reinicia el servicio si es necesario.');
+    // refresh local cache after a short delay
+    setTimeout(()=>{ if(online) fetchAll(); }, 700);
+  }catch(e){ msg.textContent = 'Error: '+e.message; showToast('Error al subir la BD'); }
 }
 
 function setPersonModalTab(tab) {

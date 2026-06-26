@@ -12,6 +12,8 @@ import uuid
 import os
 import csv
 import io
+import shutil
+import time
 
 # ── Base de datos ─────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./asistencia.db")
@@ -133,6 +135,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ── Utilidad: ruta real del archivo sqlite ──────────────────────────────────
+def resolve_sqlite_path():
+    # soporta valores como sqlite:///./asistencia.db o sqlite:////absolute/path/asistencia.db
+    if DATABASE_URL.startswith('sqlite:///'):
+        path = DATABASE_URL.split('sqlite:///')[-1]
+    elif DATABASE_URL.startswith('sqlite:'):
+        path = DATABASE_URL.split('sqlite:')[-1]
+    else:
+        path = DATABASE_URL
+    # si es relativo, relativizar respecto a este archivo
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(__file__), path)
+    return os.path.abspath(path)
 
 # ── Schemas Pydantic ──────────────────────────────────────────────────────────
 class ProjectCreate(BaseModel):
@@ -514,6 +531,95 @@ def sync_offline(payload: SyncPayload, db: Session = Depends(get_db)):
 
     db.commit()
     return {"ok": True, "synced": synced}
+
+
+# ── Endpoint: Estadísticas simples para dashboard ─────────────────────────────
+@app.get("/api/stats")
+def get_stats(db: Session = Depends(get_db)):
+    projects = db.query(Project).count()
+    persons = db.query(Person).count()
+    events = db.query(Event).count()
+    total_att = db.query(Attendance).count()
+    total_present = db.query(Attendance).filter(Attendance.present == True).count()
+    attendance_pct = round((total_present / total_att * 100), 1) if total_att else 0
+
+    # últimos 5 eventos con porcentaje de asistencia
+    recent = []
+    evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
+    for e in evs:
+        present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
+        # número esperado = número de personas asignadas al proyecto
+        proj = db.query(Project).filter(Project.id == e.project_id).first()
+        total_expected = len(proj.persons) if proj else 0
+        pct = round((present / total_expected * 100), 1) if total_expected else 0
+        resp = None
+        if e.responsible_id:
+            r = db.query(Person).filter(Person.id == e.responsible_id).first()
+            if r: resp = f"{r.nombres} {r.apellidos}".strip()
+        recent.append({"id": e.id, "name": e.name, "date": e.date, "present": present, "expected": total_expected, "pct": pct, "responsible": resp})
+
+    return {
+        "projects": projects,
+        "persons": persons,
+        "events": events,
+        "attendance_records": total_att,
+        "attendance_present": total_present,
+        "attendance_pct": attendance_pct,
+        "recent_events": recent
+    }
+
+
+# ── Endpoints: Backup / Restore de la base de datos (descargar / subir) ──────
+@app.get("/api/db/download")
+def download_db():
+    db_file = resolve_sqlite_path()
+    if not os.path.exists(db_file):
+        raise HTTPException(404, "Archivo de base de datos no encontrado")
+    return FileResponse(path=db_file, filename=os.path.basename(db_file), media_type='application/octet-stream')
+
+
+@app.post("/api/db/upload")
+def upload_db(file: UploadFile = File(...)):
+    db_file = resolve_sqlite_path()
+    tmp_path = db_file + ".upload.tmp"
+    try:
+        # Guardar carga temporal
+        with open(tmp_path, 'wb') as out_f:
+            shutil.copyfileobj(file.file, out_f)
+
+        # Hacer backup del actual
+        if os.path.exists(db_file):
+            bak_path = f"{db_file}.bak-{int(time.time())}"
+            shutil.copy2(db_file, bak_path)
+
+        # Reemplazar
+        try:
+            # Cerrar conexiones activas antes de reemplazar
+            try:
+                engine.dispose()
+            except Exception:
+                pass
+            os.replace(tmp_path, db_file)
+        except Exception as e:
+            raise HTTPException(500, f"No se pudo reemplazar la base de datos: {str(e)}")
+
+        # Recrear engine y session local para usar la nueva base
+        global engine, SessionLocal
+        engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+        # Asegurar que esquema esperado exista
+        try:
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+        except Exception:
+            pass
+
+        return {"ok": True, "message": "Base de datos restaurada. Backup creado.", "backup": bak_path if os.path.exists(db_file) else None}
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
 
 # ── Servir frontend estático ──────────────────────────────────────────────────
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
