@@ -55,6 +55,7 @@ class Event(Base):
     date       = Column(String, nullable=False)
     notes      = Column(Text, default="")
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    responsible_id = Column(String, ForeignKey("persons.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     project    = relationship("Project", back_populates="events")
     attendance = relationship("Attendance", back_populates="event", cascade="all, delete-orphan")
@@ -65,6 +66,7 @@ class Attendance(Base):
     event_id  = Column(String, ForeignKey("events.id"), nullable=False)
     person_id = Column(String, nullable=False)
     present   = Column(Boolean, default=False)
+    signature = Column(Text, default="")
     updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     event     = relationship("Event", back_populates="attendance")
 
@@ -182,6 +184,7 @@ class EventCreate(BaseModel):
     date: str
     notes: Optional[str] = ""
     project_id: str
+    responsible_id: Optional[str] = None
 
 class EventOut(BaseModel):
     id: str
@@ -189,12 +192,14 @@ class EventOut(BaseModel):
     date: str
     notes: str
     project_id: str
+    responsible_id: Optional[str]
     created_at: datetime
     class Config: from_attributes = True
 
 class AttendanceRecord(BaseModel):
     person_id: str
     present: bool
+    signature: Optional[str] = None
 
 class AttendanceBulk(BaseModel):
     records: List[AttendanceRecord]
@@ -384,7 +389,7 @@ def list_events(project_id: Optional[str] = None, db: Session = Depends(get_db))
 def create_event(data: EventCreate, db: Session = Depends(get_db)):
     if not db.query(Project).filter(Project.id == data.project_id).first():
         raise HTTPException(404, "Proyecto no encontrado")
-    ev = Event(id=data.id or str(uuid.uuid4()), name=data.name, date=data.date, notes=data.notes or "", project_id=data.project_id)
+    ev = Event(id=data.id or str(uuid.uuid4()), name=data.name, date=data.date, notes=data.notes or "", project_id=data.project_id, responsible_id=data.responsible_id)
     db.add(ev); db.commit(); db.refresh(ev)
     return ev
 
@@ -398,7 +403,11 @@ def delete_event(event_id: str, db: Session = Depends(get_db)):
 @app.get("/api/events/{event_id}/attendance")
 def get_attendance(event_id: str, db: Session = Depends(get_db)):
     records = db.query(Attendance).filter(Attendance.event_id == event_id).all()
-    return {r.person_id: r.present for r in records}
+    # return present status and signature if exists
+    out = {}
+    for r in records:
+        out[r.person_id] = {"present": r.present, "signature": r.signature if getattr(r, 'signature', None) else None}
+    return out
 
 @app.post("/api/events/{event_id}/attendance")
 def save_attendance(event_id: str, data: AttendanceBulk, db: Session = Depends(get_db)):
@@ -411,9 +420,10 @@ def save_attendance(event_id: str, data: AttendanceBulk, db: Session = Depends(g
         ).first()
         if existing:
             existing.present = rec.present
+            existing.signature = rec.signature or existing.signature
             existing.updated_at = datetime.utcnow()
         else:
-            db.add(Attendance(event_id=event_id, person_id=rec.person_id, present=rec.present))
+            db.add(Attendance(event_id=event_id, person_id=rec.person_id, present=rec.present, signature=rec.signature or ""))
     db.commit()
     return {"ok": True}
 
@@ -481,15 +491,25 @@ def sync_offline(payload: SyncPayload, db: Session = Depends(get_db)):
     db.flush()
 
     for event_id, records in payload.attendance.items():
-        for person_id, present in records.items():
+        for person_id, present_val in records.items():
+            # support either boolean or dict { present: bool, signature: str }
+            if isinstance(present_val, dict):
+                present = present_val.get('present', False)
+                signature = present_val.get('signature')
+            else:
+                present = bool(present_val)
+                signature = None
+
             existing = db.query(Attendance).filter(
                 Attendance.event_id == event_id,
                 Attendance.person_id == person_id
             ).first()
             if existing:
                 existing.present = present
+                if signature:
+                    existing.signature = signature
             else:
-                db.add(Attendance(event_id=event_id, person_id=person_id, present=present))
+                db.add(Attendance(event_id=event_id, person_id=person_id, present=present, signature=signature or ""))
             synced["attendance"] += 1
 
     db.commit()

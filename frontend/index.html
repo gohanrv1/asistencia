@@ -248,10 +248,22 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <label>Nombre</label><input type="text" id="ev-name" placeholder="Ej: Sesión #3, Reunión mensual">
       <label>Proyecto</label><select id="ev-project"></select>
       <label>Fecha</label><input type="date" id="ev-date">
+      <label>Responsable (persona)</label><select id="ev-responsible"></select>
       <label>Notas (opcional)</label><input type="text" id="ev-notes" placeholder="Observaciones">
       <div class="modal-actions">
         <button class="btn" onclick="closeModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="createNewEvent()">Crear</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-signature" class="overlay" style="display:none">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-title">Firma — dibuja en la pantalla</div>
+      <canvas id="sig-canvas" width="480" height="220" style="border:1px solid var(--border);border-radius:8px;touch-action:none;"></canvas>
+      <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="clearSignature()">Borrar</button>
+        <button class="btn" onclick="cancelSignature()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveSignature()">Guardar firma</button>
       </div>
     </div>
   </div>
@@ -273,9 +285,11 @@ let pendingSync = [];   // cambios offline pendientes
 let online = true;
 let currentProject = null;
 let currentEvent = null;
+let signatures = {}; // signatures[eventId] = { personId: dataUrl }
+let _sig_target = null;
 
 function saveLocal() {
-  try { localStorage.setItem('att_cache', JSON.stringify({cache, pendingSync})); } catch(e){}
+  try { localStorage.setItem('att_cache', JSON.stringify({cache, pendingSync, signatures})); } catch(e){}
 }
 function loadLocal() {
   try {
@@ -284,9 +298,14 @@ function loadLocal() {
       const d=JSON.parse(raw); 
       cache=d.cache||cache; 
       cache.project_persons = cache.project_persons || [];
-      pendingSync=d.pendingSync||[]; 
+      pendingSync=d.pendingSync||[];
+      signatures=d.signatures||{};
     }
   } catch(e){}
+}
+
+function clearLocal() {
+  try { localStorage.removeItem('att_cache'); } catch(e) {}
 }
 
 // ─── Sync badge ───────────────────────────────────────────────────────────────
@@ -348,7 +367,9 @@ async function autoSync() {
       if(op.type==='attendance'){
         const {event_id, person_id, present} = op.data;
         if(!payload.attendance[event_id]) payload.attendance[event_id]={};
-        payload.attendance[event_id][person_id] = present;
+        // include signature if available in the pending op
+        if(op.data.signature) payload.attendance[event_id][person_id] = { present: present, signature: op.data.signature };
+        else payload.attendance[event_id][person_id] = present;
       }
     }
     const res = await apiFetch('POST','/sync', payload);
@@ -402,6 +423,9 @@ function openModal(name) {
     sel.innerHTML=cache.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     if(currentProject) sel.value=currentProject.id;
     document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
+    // populate responsible select with persons
+    const resp = document.getElementById('ev-responsible');
+    if(resp) resp.innerHTML = cache.persons.map(p=>`<option value="${p.id}">${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
   }
   setTimeout(()=>{ const f=document.querySelector(`#modal-${name} input`); if(f)f.focus(); },50);
 }
@@ -665,6 +689,9 @@ async function createNewEvent() {
   const date=document.getElementById('ev-date').value;
   if(!name||!project_id) return;
   const data={ id:uid(), name, project_id, date, notes:document.getElementById('ev-notes').value.trim() };
+  // include responsible if selected
+  const respEl = document.getElementById('ev-responsible');
+  if(respEl && respEl.value) data.responsible_id = respEl.value;
   if(online) {
     try { const ev=await apiFetch('POST','/events',data); cache.events.unshift(ev); saveLocal(); }
     catch(e){ showToast('Error: '+e.message); return; }
@@ -694,16 +721,77 @@ async function deleteEvent(id) {
 
 async function toggleAtt(personId) {
   const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
-  att[personId]=!att[personId];
+  const newVal = !att[personId];
+  // if marking present, require signature
+  if(newVal){
+    openSignatureModal(personId);
+    return;
+  }
+  // marking absent
+  att[personId]=false;
   if(online) {
     try {
-      await apiFetch('POST',`/events/${currentEvent.id}/attendance`,{records:[{person_id:personId,present:att[personId]}]});
+      await apiFetch('POST',`/events/${currentEvent.id}/attendance`,{records:[{person_id:personId,present:false}]});
     } catch(e){ showToast('Error guardando: '+e.message); }
   } else {
-    pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:personId,present:att[personId]}});
+    pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:personId,present:false}});
     updatePendingTab();
   }
   saveLocal(); renderAttendance();
+}
+
+function openSignatureModal(personId){
+  _sig_target = personId;
+  document.getElementById('modal-overlay').style.display='flex';
+  document.getElementById('modal-signature').style.display='flex';
+  const c = document.getElementById('sig-canvas');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  // simple drawing handlers
+  let drawing=false;
+  let lastX=0, lastY=0;
+  function ptrDown(e){ drawing=true; const r=c.getBoundingClientRect(); lastX=(e.touches?e.touches[0].clientX:e.clientX)-r.left; lastY=(e.touches?e.touches[0].clientY:e.clientY)-r.top; }
+  function ptrMove(e){ if(!drawing) return; const r=c.getBoundingClientRect(); const x=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const y=(e.touches?e.touches[0].clientY:e.clientY)-r.top; ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#000'; ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke(); lastX=x; lastY=y; }
+  function ptrUp(){ drawing=false; }
+  c.removeEventListener('pointerdown', c._pd);
+  c.removeEventListener('pointermove', c._pm);
+  c.removeEventListener('pointerup', c._pu);
+  c.addEventListener('pointerdown', ptrDown); c._pd=ptrDown;
+  c.addEventListener('pointermove', ptrMove); c._pm=ptrMove;
+  c.addEventListener('pointerup', ptrUp); c._pu=ptrUp;
+  c.addEventListener('pointerleave', ptrUp);
+}
+
+function clearSignature(){ const c=document.getElementById('sig-canvas'); const ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
+
+function cancelSignature(){ _sig_target=null; document.getElementById('modal-overlay').style.display='none'; document.getElementById('modal-signature').style.display='none'; }
+
+async function saveSignature(){
+  const c=document.getElementById('sig-canvas');
+  const dataUrl=c.toDataURL('image/png');
+  const personId=_sig_target; if(!personId) return cancelSignature();
+  // store locally
+  signatures[currentEvent.id]=signatures[currentEvent.id]||{};
+  signatures[currentEvent.id][personId]=dataUrl;
+  // mark present in attendance
+  const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
+  att[personId]=true;
+  if(online){
+    try{
+      await apiFetch('POST',`/events/${currentEvent.id}/attendance`,{records:[{person_id:personId,present:true,signature:dataUrl}]});
+    }catch(e){ showToast('Error guardando firma: '+e.message); pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:personId,present:true,signature:dataUrl}}); updatePendingTab(); }
+  } else {
+    pendingSync.push({type:'attendance',data:{event_id:currentEvent.id,person_id:personId,present:true,signature:dataUrl}});
+    updatePendingTab();
+  }
+  saveLocal(); renderAttendance(); cancelSignature();
+}
+
+function viewSignature(personId){
+  const data = signatures[currentEvent.id] && signatures[currentEvent.id][personId];
+  if(!data){ showToast('No hay firma disponible'); return; }
+  const w = window.open('about:blank','signature');
+  w.document.write(`<img src="${data}" style="max-width:100%">`);
 }
 
 async function markAll(val) {
@@ -864,8 +952,21 @@ async function openAttendance(eventId, backTo) {
   currentEvent=cache.events.find(e=>e.id===eventId);
   // Cargar asistencia del servidor si está online
   if(online && !cache.attendance[eventId]) {
-    try { cache.attendance[eventId]=await apiFetch('GET',`/events/${eventId}/attendance`); saveLocal(); }
-    catch(e){}
+    try {
+      const data = await apiFetch('GET',`/events/${eventId}/attendance`);
+      cache.attendance[eventId] = cache.attendance[eventId] || {};
+      signatures[eventId] = signatures[eventId] || {};
+      for(const pid of Object.keys(data||{})){
+        const val = data[pid];
+        if(typeof val === 'object'){
+          cache.attendance[eventId][pid] = !!val.present;
+          if(val.signature) signatures[eventId][pid] = val.signature;
+        } else {
+          cache.attendance[eventId][pid] = !!val;
+        }
+      }
+      saveLocal();
+    } catch(e){}
   }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-attendance').classList.add('active');
@@ -912,7 +1013,10 @@ function renderAttendance() {
               <div class="pname">${p.nombres || p.name || ''} ${p.apellidos || ''}</div>
               <div class="prole">${p.cargo || p.role || 'Sin cargo'}</div>
             </div>
-            <div class="att-toggle ${isPresent?'att-y':'att-n'}"><i class="ti ti-${isPresent?'check':'x'}"></i></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div class="att-toggle ${isPresent?'att-y':'att-n'}"><i class="ti ti-${isPresent?'check':'x'}"></i></div>
+              ${ (signatures[currentEvent.id] && signatures[currentEvent.id][p.id]) ? `<button class="btn btn-sm" onclick="(function(e){e.stopPropagation();viewSignature('${p.id}')})(event)">Ver firma</button>` : '' }
+            </div>
           </div>`;
         }).join('')}</div>`}
   `;
