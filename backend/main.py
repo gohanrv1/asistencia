@@ -587,6 +587,9 @@ def upload_db(file: UploadFile = File(...)):
         with open(tmp_path, 'wb') as out_f:
             shutil.copyfileobj(file.file, out_f)
 
+        # Preparar backup path variable
+        bak_path = None
+
         # Hacer backup del actual
         if os.path.exists(db_file):
             bak_path = f"{db_file}.bak-{int(time.time())}"
@@ -594,6 +597,8 @@ def upload_db(file: UploadFile = File(...)):
 
         # Reemplazar
         try:
+            # Declarar globals antes de usar engine
+            global engine, SessionLocal
             # Cerrar conexiones activas antes de reemplazar
             try:
                 engine.dispose()
@@ -604,7 +609,6 @@ def upload_db(file: UploadFile = File(...)):
             raise HTTPException(500, f"No se pudo reemplazar la base de datos: {str(e)}")
 
         # Recrear engine y session local para usar la nueva base
-        global engine, SessionLocal
         engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
