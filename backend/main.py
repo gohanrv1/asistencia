@@ -14,6 +14,9 @@ import csv
 import io
 import shutil
 import time
+import hashlib
+import secrets
+
 
 # ── Base de datos ─────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./asistencia.db")
@@ -72,6 +75,51 @@ class Attendance(Base):
     updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     event     = relationship("Event", back_populates="attendance")
 
+class User(Base):
+    __tablename__ = "users"
+    id            = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username      = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    is_active     = Column(Boolean, default=True)
+    role          = Column(String, default="user") # "admin" o "user"
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    token      = Column(String, primary_key=True)
+    user_id    = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# ── Helpers de Contraseñas ──────────────────────────────────────────────────
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    )
+    return f"pbkdf2_sha256$100000${salt}${key.hex()}"
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        parts = hashed.split('$')
+        if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+            return False
+        iterations = int(parts[1])
+        salt = parts[2]
+        original_hash = parts[3]
+        new_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            iterations
+        )
+        return new_hash.hex() == original_hash
+    except Exception:
+        return False
+
 # Verificación e inicialización de base de datos
 # Usar checkfirst=True para evitar errores con múltiples workers
 try:
@@ -79,23 +127,42 @@ try:
     # Crear tablas si no existen (checkfirst=True evita errores si ya existen)
     Base.metadata.create_all(bind=engine, checkfirst=True)
     
-    # Verificar que el esquema es correcto
+    # Verificar que el esquema es correcto (comprobando tablas críticas)
     with engine.connect() as conn:
         conn.execute(text("SELECT cedula FROM persons LIMIT 1"))
+        conn.execute(text("SELECT username FROM users LIMIT 1"))
     print("✅ Base de datos OK")
 except Exception as e:
     error_msg = str(e)
     if "no such column" in error_msg or "no such table" in error_msg:
-        print(f"⚠️  Esquema desactualizado, recreando...")
+        print(f"⚠️ Esquema desactualizado, recreando...")
         try:
             Base.metadata.drop_all(bind=engine)
             Base.metadata.create_all(bind=engine, checkfirst=True)
             print("✅ Base de datos recreada correctamente")
         except Exception as recreate_error:
             print(f"❌ Error al recrear: {str(recreate_error)[:200]}")
-            # Continuar de todas formas - las tablas probablemente existen
     else:
-        print(f"✅ Base de datos inicializada (algunas tablas ya existían)")
+        print(f"✅ Base de datos inicializada")
+
+# Crear el usuario administrador inicial si no existe
+try:
+    with SessionLocal() as db:
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if not admin_user:
+            print("👤 Creando usuario administrador inicial (admin)...")
+            admin_user = User(
+                username="admin",
+                password_hash=hash_password("Admin1040*"),
+                is_active=True,
+                role="admin"
+            )
+            db.add(admin_user)
+            db.commit()
+            print("👤 Usuario admin creado correctamente.")
+except Exception as admin_err:
+    print(f"⚠️ Error al crear usuario admin: {str(admin_err)}")
+
 
 # ── App FastAPI ───────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -136,6 +203,69 @@ def get_db():
     finally:
         db.close()
 
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Security
+
+security_scheme = HTTPBearer(auto_error=False)
+
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    token: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    token_str = None
+    if credentials:
+        token_str = credentials.credentials
+    elif token:
+        token_str = token
+        
+    if not token_str:
+        raise HTTPException(status_code=401, detail="No autorizado (Falta Token)")
+    
+    session = db.query(UserSession).filter(UserSession.token == token_str).first()
+    if not session:
+        raise HTTPException(status_code=401, detail="Sesión inválida o expirada")
+        
+    if session.expires_at < datetime.utcnow():
+        db.delete(session)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Sesión expirada")
+        
+    user = db.query(User).filter(User.id == session.user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Usuario inactivo")
+    return user
+
+def get_current_admin(current_user: User = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Requiere permisos de administrador")
+    return current_user
+
+# ── Auth Schemas ─────────────────────────────────────────────────────────────
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: Optional[str] = "user"
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+class UserPasswordUpdate(BaseModel):
+    password: str
+
+class UserOutModel(BaseModel):
+    id: str
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    class Config: from_attributes = True
 
 # ── Utilidad: ruta real del archivo sqlite ──────────────────────────────────
 def resolve_sqlite_path():
@@ -234,25 +364,110 @@ class SyncPayload(BaseModel):
     assignments:   List[ProjectPersonSync]  = []
     unassignments: List[ProjectPersonSync]  = []
 
+from datetime import timedelta
+
+# ── Endpoints: Autenticación ──────────────────────────────────────────────────
+@app.post("/api/auth/login")
+def login(data: LoginPayload, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+    if not user or not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Usuario inactivo")
+    
+    token = secrets.token_hex(32)
+    expires_at = datetime.utcnow() + timedelta(days=7)
+    
+    session = UserSession(token=token, user_id=user.id, expires_at=expires_at)
+    db.add(session)
+    db.commit()
+    
+    return {
+        "token": token,
+        "username": user.username,
+        "role": user.role
+    }
+
+@app.post("/api/auth/logout")
+def logout(current_user: User = Depends(get_current_user), credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme), db: Session = Depends(get_db)):
+    if credentials:
+        token = credentials.credentials
+        session = db.query(UserSession).filter(UserSession.token == token).first()
+        if session:
+            db.delete(session)
+            db.commit()
+    return {"ok": True}
+
+@app.get("/api/auth/me", response_model=UserOutModel)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+# ── Endpoints: Gestión de Usuarios (Sólo Administradores) ──────────────────────
+@app.get("/api/users", response_model=List[UserOutModel])
+def list_users(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+@app.post("/api/users", response_model=UserOutModel, status_code=201)
+def create_user(data: UserCreate, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.username == data.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="El nombre de usuario ya está registrado")
+    
+    new_user = User(
+        username=data.username,
+        password_hash=hash_password(data.password),
+        role=data.role or "user",
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@app.put("/api/users/{user_id}/status", response_model=UserOutModel)
+def update_user_status(user_id: str, data: UserStatusUpdate, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="No puedes desactivar tu propio usuario")
+        
+    user.is_active = data.is_active
+    db.commit()
+    db.refresh(user)
+    return user
+
+@app.put("/api/users/{user_id}/password", response_model=UserOutModel)
+def update_user_password(user_id: str, data: UserPasswordUpdate, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+    user.password_hash = hash_password(data.password)
+    db.commit()
+    db.refresh(user)
+    return user
+
 # ── Endpoints: Proyectos ──────────────────────────────────────────────────────
 @app.get("/api/projects", response_model=List[ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
+def list_projects(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Project).order_by(Project.created_at.desc()).all()
 
 @app.post("/api/projects", response_model=ProjectOut, status_code=201)
-def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(data: ProjectCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = Project(id=data.id or str(uuid.uuid4()), name=data.name, description=data.description or "")
     db.add(proj); db.commit(); db.refresh(proj)
     return proj
 
 @app.get("/api/projects/{project_id}", response_model=ProjectOut)
-def get_project(project_id: str, db: Session = Depends(get_db)):
+def get_project(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj: raise HTTPException(404, "Proyecto no encontrado")
     return proj
 
 @app.put("/api/projects/{project_id}", response_model=ProjectOut)
-def update_project(project_id: str, data: ProjectCreate, db: Session = Depends(get_db)):
+def update_project(project_id: str, data: ProjectCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj: raise HTTPException(404, "Proyecto no encontrado")
     proj.name = data.name; proj.description = data.description or ""
@@ -260,25 +475,25 @@ def update_project(project_id: str, data: ProjectCreate, db: Session = Depends(g
     return proj
 
 @app.delete("/api/projects/{project_id}", status_code=204)
-def delete_project(project_id: str, db: Session = Depends(get_db)):
+def delete_project(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj: raise HTTPException(404, "Proyecto no encontrado")
     db.delete(proj); db.commit()
 
 # ── Endpoints: Personas ───────────────────────────────────────────────────────
 @app.get("/api/persons", response_model=List[PersonOut])
-def list_all_persons(db: Session = Depends(get_db)):
+def list_all_persons(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Person).all()
 
 @app.get("/api/projects/{project_id}/persons", response_model=List[PersonOut])
-def list_persons(project_id: str, db: Session = Depends(get_db)):
+def list_persons(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj:
         raise HTTPException(404, "Proyecto no encontrado")
     return proj.persons
 
 @app.post("/api/persons", response_model=PersonOut, status_code=201)
-def create_person(data: PersonCreate, db: Session = Depends(get_db)):
+def create_person(data: PersonCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     person = db.query(Person).filter(Person.cedula == data.cedula).first()
     if not person:
         person = Person(
@@ -304,13 +519,13 @@ def create_person(data: PersonCreate, db: Session = Depends(get_db)):
     return person
 
 @app.delete("/api/persons/{person_id}", status_code=204)
-def delete_person(person_id: str, db: Session = Depends(get_db)):
+def delete_person(person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     person = db.query(Person).filter(Person.id == person_id).first()
     if not person: raise HTTPException(404, "Persona no encontrada")
     db.delete(person); db.commit()
 
 @app.post("/api/projects/{project_id}/persons/{person_id}", status_code=200)
-def assign_person_to_project(project_id: str, person_id: str, db: Session = Depends(get_db)):
+def assign_person_to_project(project_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     person = db.query(Person).filter(Person.id == person_id).first()
     if not proj or not person:
@@ -321,7 +536,7 @@ def assign_person_to_project(project_id: str, person_id: str, db: Session = Depe
     return {"ok": True}
 
 @app.delete("/api/projects/{project_id}/persons/{person_id}", status_code=204)
-def unassign_person_from_project(project_id: str, person_id: str, db: Session = Depends(get_db)):
+def unassign_person_from_project(project_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     person = db.query(Person).filter(Person.id == person_id).first()
     if not proj or not person:
@@ -331,12 +546,12 @@ def unassign_person_from_project(project_id: str, person_id: str, db: Session = 
         db.commit()
 
 @app.get("/api/project-persons")
-def list_project_persons(db: Session = Depends(get_db)):
+def list_project_persons(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     associations = db.query(project_person).all()
     return [{"project_id": a.project_id, "person_id": a.person_id} for a in associations]
 
 @app.get("/api/persons/template")
-def download_csv_template():
+def download_csv_template(current_user: User = Depends(get_current_user)):
     csv_content = "nombres,apellidos,cedula,cargo,correo,celular\nJuan,Perez,12345678,Gerente,juan@example.com,555-1234\nMaria,Gomez,87654321,Analista,,555-5678\n"
     output = io.StringIO()
     output.write(csv_content)
@@ -348,7 +563,7 @@ def download_csv_template():
     )
 
 @app.post("/api/projects/{project_id}/persons/upload-csv")
-def upload_csv(project_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     proj = db.query(Project).filter(Project.id == project_id).first()
     if not proj:
         raise HTTPException(404, "Proyecto no encontrado")
@@ -397,13 +612,13 @@ def upload_csv(project_id: str, file: UploadFile = File(...), db: Session = Depe
 
 # ── Endpoints: Eventos ────────────────────────────────────────────────────────
 @app.get("/api/events", response_model=List[EventOut])
-def list_events(project_id: Optional[str] = None, db: Session = Depends(get_db)):
+def list_events(project_id: Optional[str] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Event)
     if project_id: q = q.filter(Event.project_id == project_id)
     return q.order_by(Event.date.desc()).all()
 
 @app.post("/api/events", response_model=EventOut, status_code=201)
-def create_event(data: EventCreate, db: Session = Depends(get_db)):
+def create_event(data: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not db.query(Project).filter(Project.id == data.project_id).first():
         raise HTTPException(404, "Proyecto no encontrado")
     ev = Event(id=data.id or str(uuid.uuid4()), name=data.name, date=data.date, notes=data.notes or "", project_id=data.project_id, responsible_id=data.responsible_id)
@@ -411,14 +626,14 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
     return ev
 
 @app.delete("/api/events/{event_id}", status_code=204)
-def delete_event(event_id: str, db: Session = Depends(get_db)):
+def delete_event(event_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ev = db.query(Event).filter(Event.id == event_id).first()
     if not ev: raise HTTPException(404, "Evento no encontrado")
     db.delete(ev); db.commit()
 
 # ── Endpoints: Asistencia ─────────────────────────────────────────────────────
 @app.get("/api/events/{event_id}/attendance")
-def get_attendance(event_id: str, db: Session = Depends(get_db)):
+def get_attendance(event_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     records = db.query(Attendance).filter(Attendance.event_id == event_id).all()
     # return present status and signature if exists
     out = {}
@@ -427,7 +642,7 @@ def get_attendance(event_id: str, db: Session = Depends(get_db)):
     return out
 
 @app.post("/api/events/{event_id}/attendance")
-def save_attendance(event_id: str, data: AttendanceBulk, db: Session = Depends(get_db)):
+def save_attendance(event_id: str, data: AttendanceBulk, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not db.query(Event).filter(Event.id == event_id).first():
         raise HTTPException(404, "Evento no encontrado")
     for rec in data.records:
@@ -446,7 +661,7 @@ def save_attendance(event_id: str, data: AttendanceBulk, db: Session = Depends(g
 
 # ── Endpoint: Sincronización offline ─────────────────────────────────────────
 @app.post("/api/sync")
-def sync_offline(payload: SyncPayload, db: Session = Depends(get_db)):
+def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Recibe todos los cambios pendientes del cliente offline
     y los aplica en orden: proyectos → personas → eventos → asistencia.
@@ -535,7 +750,7 @@ def sync_offline(payload: SyncPayload, db: Session = Depends(get_db)):
 
 # ── Endpoint: Estadísticas simples para dashboard ─────────────────────────────
 @app.get("/api/stats")
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     projects = db.query(Project).count()
     persons = db.query(Person).count()
     events = db.query(Event).count()
@@ -545,8 +760,8 @@ def get_stats(db: Session = Depends(get_db)):
 
     # últimos 5 eventos con porcentaje de asistencia
     recent = []
-    evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
-    for e in evs:
+    recent_evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
+    for e in recent_evs:
         present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
         # número esperado = número de personas asignadas al proyecto
         proj = db.query(Project).filter(Project.id == e.project_id).first()
@@ -571,7 +786,7 @@ def get_stats(db: Session = Depends(get_db)):
 
 # ── Endpoints: Backup / Restore de la base de datos (descargar / subir) ──────
 @app.get("/api/db/download")
-def download_db():
+def download_db(current_user: User = Depends(get_current_user)):
     db_file = resolve_sqlite_path()
     if not os.path.exists(db_file):
         raise HTTPException(404, "Archivo de base de datos no encontrado")
@@ -579,7 +794,7 @@ def download_db():
 
 
 @app.post("/api/db/upload")
-def upload_db(file: UploadFile = File(...)):
+def upload_db(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     db_file = resolve_sqlite_path()
     tmp_path = db_file + ".upload.tmp"
     try:

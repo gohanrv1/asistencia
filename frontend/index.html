@@ -122,18 +122,116 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .loading{display:flex;align-items:center;justify-content:center;padding:48px;color:var(--text2);}
 .loading i{font-size:28px;animation:spin .8s linear infinite;}
+#login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg3);
+  padding: 20px;
+}
+.login-card {
+  background: var(--bg);
+  padding: 32px;
+  border-radius: var(--rl);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 0 0 0.5px var(--border);
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeUp .3s ease;
+}
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.login-logo {
+  font-size: 36px;
+  color: var(--purple);
+  background: var(--pl);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.login-subtitle {
+  font-size: 14px;
+  color: var(--text2);
+}
+.login-error {
+  background: var(--rl2);
+  color: var(--red);
+  padding: 10px 14px;
+  border-radius: var(--r);
+  font-size: 13px;
+  border: 0.5px solid var(--border);
+  display: none;
+}
+.user-status-active {
+  background: var(--tl);
+  color: var(--teal);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+}
+.user-status-inactive {
+  background: var(--rl2);
+  color: var(--red);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+}
 @media(max-width:600px){.content{padding:14px;}.stats-row{gap:8px;}.stat-num{font-size:20px;}.card{padding:12px;}}
 </style>
 </head>
 <body>
-<div class="app">
+<!-- Contenedor de Login -->
+<div id="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo"><i class="ti ti-clipboard-check"></i></div>
+      <div class="login-title">Control de Asistencia</div>
+      <div class="login-subtitle">Inicia sesión para continuar</div>
+    </div>
+    <div id="login-error-msg" class="login-error"></div>
+    <label for="login-username">Usuario</label>
+    <input type="text" id="login-username" placeholder="Ingrese su usuario" autocomplete="username">
+    <label for="login-password">Contraseña</label>
+    <input type="password" id="login-password" placeholder="Ingrese su contraseña" autocomplete="current-password" onkeydown="if(event.key === 'Enter') performLogin()">
+    <button class="btn btn-primary" onclick="performLogin()" style="margin-top: 8px;">Ingresar</button>
+  </div>
+</div>
+
+<div class="app" id="app-container" style="display:none">
   <div class="topbar">
     <div class="topbar-left">
       <div class="logo"><i class="ti ti-clipboard-check"></i></div>
       <span class="topbar-title">Asistencia</span>
     </div>
-    <div id="syncBadge" class="sync-badge s-online" onclick="toggleOnline()" title="Toca para simular modo offline">
-      <i class="ti ti-wifi"></i><span>En línea</span>
+    <div style="display:flex; align-items:center;">
+      <span id="userSessionBadge" style="font-size:12px; color:var(--text2); margin-right:12px; font-weight:600;"></span>
+      <div id="syncBadge" class="sync-badge s-online" onclick="toggleOnline()" title="Toca para simular modo offline">
+        <i class="ti ti-wifi"></i><span>En línea</span>
+      </div>
+      <button class="btn btn-sm" onclick="performLogout()" style="margin-left: 8px; background: none; border: none; padding: 4px 8px; color: var(--red); cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight:600;" title="Cerrar sesión">
+        <i class="ti ti-logout" style="font-size: 16px;"></i>Salir
+      </button>
     </div>
   </div>
   <nav class="nav">
@@ -142,6 +240,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
     <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard"><i class="ti ti-chart-pie"></i>Dashboard</button>
     <button class="nav-btn" onclick="showTab('backup')" id="tab-backup"><i class="ti ti-database"></i>Backup</button>
     <button class="nav-btn" onclick="showTab('pending')" id="tab-pending"><i class="ti ti-cloud-upload"></i>Pendientes</button>
+    <button class="nav-btn" onclick="showTab('users')" id="tab-users" style="display:none;"><i class="ti ti-users"></i>Usuarios</button>
   </nav>
   <div class="content">
     <div id="view-projects" class="view active">
@@ -190,6 +289,26 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <input type="file" id="db-file-input" accept=".db" style="margin-bottom:8px">
         <div style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById('db-file-input').click()">Seleccionar archivo</button><button class="btn btn-primary" onclick="uploadDB()">Subir y Restaurar</button></div>
         <div id="backup-msg" style="margin-top:10px;color:var(--text2)"></div>
+      </div>
+    </div>
+    <div id="view-users" class="view">
+      <div class="sh"><span class="st">Gestión de Usuarios</span>
+        <button class="btn btn-primary btn-sm" onclick="openModal('newUser')"><i class="ti ti-user-plus"></i>Nuevo Usuario</button>
+      </div>
+      <div class="card" style="padding:0; overflow-x:auto; border-radius:var(--r);">
+        <table style="width:100%; border-collapse:collapse; text-align:left; font-size:14px;">
+          <thead>
+            <tr style="border-bottom:0.5px solid var(--border); background:var(--bg2);">
+              <th style="padding:12px; font-weight:600; color:var(--text);">Usuario</th>
+              <th style="padding:12px; font-weight:600; color:var(--text);">Rol</th>
+              <th style="padding:12px; font-weight:600; color:var(--text);">Estado</th>
+              <th style="padding:12px; font-weight:600; color:var(--text); text-align:right; padding-right:16px;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <!-- Cargado dinámicamente -->
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -288,6 +407,34 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       </div>
     </div>
   </div>
+  <div id="modal-newUser" class="overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-title">Nuevo Usuario</div>
+      <label for="nu-username">Nombre de usuario</label><input type="text" id="nu-username" placeholder="Ej: supervisor">
+      <label for="nu-password">Contraseña</label><input type="password" id="nu-password" placeholder="Contraseña">
+      <label for="nu-role">Rol</label>
+      <select id="nu-role" style="margin-bottom: 12px;">
+        <option value="user">Usuario Común</option>
+        <option value="admin">Administrador</option>
+      </select>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="createUser()">Crear</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-changePassword" class="overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-title">Cambiar Contraseña</div>
+      <input type="hidden" id="cp-user-id">
+      <div id="cp-user-label" style="font-weight:600; margin-bottom:12px; color:var(--text);">Usuario: ...</div>
+      <label for="cp-password">Nueva contraseña</label><input type="password" id="cp-password" placeholder="Nueva contraseña">
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="changeUserPassword()">Guardar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -350,12 +497,29 @@ function toggleOnline() {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 async function apiFetch(method, path, body) {
-  const opts = { method, headers:{'Content-Type':'application/json'} };
+  const token = localStorage.getItem('token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  const opts = { method, headers };
   if(body) opts.body = JSON.stringify(body);
-  const res = await fetch(API+path, opts);
-  if(!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.detail||res.statusText); }
-  if(res.status===204) return null;
-  return res.json();
+  
+  try {
+    const res = await fetch(API+path, opts);
+    if(res.status === 401) {
+      localStorage.clear();
+      checkSession();
+      throw new Error('Sesión expirada o no autorizada');
+    }
+    if(!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.detail||res.statusText); }
+    if(res.status===204) return null;
+    return await res.json();
+  } catch (error) {
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error('No se pudo conectar al servidor. Compruebe su conexión.');
+    }
+    throw error;
+  }
 }
 
 // ─── Sincronización con servidor ─────────────────────────────────────────────
@@ -431,6 +595,7 @@ function showTab(tab) {
   else if(tab==='pending') renderPending();
   else if(tab==='dashboard') loadDashboard();
   else if(tab==='backup') { /* nothing to load proactively */ }
+  else if(tab==='users') loadUsers();
 }
 function goBack(to) {
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -578,9 +743,9 @@ async function loadDashboard(){
 }
 
 function downloadDB(){
-  // For file download, simply navigate to the endpoint
+  const token = localStorage.getItem('token');
   const a = document.createElement('a');
-  a.href = API + '/db/download';
+  a.href = API + '/db/download?token=' + encodeURIComponent(token || '');
   a.download = '';
   document.body.appendChild(a); a.click(); a.remove();
 }
@@ -593,12 +758,16 @@ async function uploadDB(){
   const form = new FormData(); form.append('file', f, f.name);
   msg.textContent = 'Subiendo...';
   try{
-    const res = await fetch(API + '/db/upload', { method: 'POST', body: form });
+    const token = localStorage.getItem('token');
+    const res = await fetch(API + '/db/upload', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: form
+    });
     if(!res.ok){ const err = await res.text().catch(()=>res.statusText); throw new Error(err); }
     const j = await res.json();
     msg.textContent = j.message || 'Restauración completada.';
     showToast('Base de datos restaurada. Reinicia el servicio si es necesario.');
-    // refresh local cache after a short delay
     setTimeout(()=>{ if(online) fetchAll(); }, 700);
   }catch(e){ msg.textContent = 'Error: '+e.message; showToast('Error al subir la BD'); }
 }
@@ -725,7 +894,8 @@ async function deletePerson(id) {
 
 function downloadCsvTemplate(event) {
   event.preventDefault();
-  window.location.href = API + '/persons/template';
+  const token = localStorage.getItem('token');
+  window.location.href = API + '/persons/template?token=' + encodeURIComponent(token || '');
 }
 
 async function uploadCsvFile() {
@@ -745,8 +915,10 @@ async function uploadCsvFile() {
   formData.append('file', file);
   
   try {
+    const token = localStorage.getItem('token');
     const res = await fetch(`${API}/projects/${currentProject.id}/persons/upload-csv`, {
       method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
       body: formData
     });
     
@@ -1122,19 +1294,210 @@ function renderPending() {
       </div>`).join('');
 }
 
+// ─── Sesión de Usuario ────────────────────────────────────────────────────────
+let currentUser = null;
+
+function checkSession() {
+  const token = localStorage.getItem('token');
+  const username = localStorage.getItem('username');
+  const role = localStorage.getItem('role');
+  
+  if (token && username && role) {
+    currentUser = { token, username, role };
+    document.getElementById('login-container').style.display = 'none';
+    document.getElementById('app-container').style.display = 'flex';
+    document.getElementById('userSessionBadge').textContent = username + ' (' + (role === 'admin' ? 'Admin' : 'Usuario') + ')';
+    
+    // Mostrar/ocultar tab de usuarios
+    const tabUsers = document.getElementById('tab-users');
+    if (role === 'admin') {
+      tabUsers.style.display = 'flex';
+    } else {
+      tabUsers.style.display = 'none';
+    }
+    return true;
+  } else {
+    currentUser = null;
+    document.getElementById('login-container').style.display = 'flex';
+    document.getElementById('app-container').style.display = 'none';
+    return false;
+  }
+}
+
+async function performLogin() {
+  const uInput = document.getElementById('login-username');
+  const pInput = document.getElementById('login-password');
+  const errEl = document.getElementById('login-error-msg');
+  
+  const username = uInput.value.trim();
+  const password = pInput.value;
+  
+  if (!username || !password) {
+    errEl.textContent = 'Por favor complete todos los campos';
+    errEl.style.display = 'block';
+    return;
+  }
+  
+  try {
+    const res = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Usuario o contraseña incorrectos');
+    }
+    
+    const data = await res.json();
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('username', data.username);
+    localStorage.setItem('role', data.role);
+    
+    uInput.value = '';
+    pInput.value = '';
+    errEl.style.display = 'none';
+    
+    if (checkSession()) {
+      showToast('Sesión iniciada con éxito');
+      await initApp();
+    }
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+async function performLogout() {
+  const token = localStorage.getItem('token');
+  if (token) {
+    try {
+      await fetch(API + '/auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+    } catch (e) {
+      console.error('Logout request failed:', e);
+    }
+  }
+  localStorage.clear();
+  checkSession();
+  showToast('Sesión cerrada');
+}
+
+// ─── Gestión de Usuarios (Sólo Admin) ──────────────────────────────────────────
+async function loadUsers() {
+  const tbody = document.getElementById('users-table-body');
+  tbody.innerHTML = `<tr><td colspan="4" class="loading"><i class="ti ti-loader"></i> Cargando usuarios...</td></tr>`;
+  try {
+    const users = await apiFetch('GET', '/users');
+    tbody.innerHTML = users.map(u => {
+      const isActive = u.is_active;
+      const roleText = u.role === 'admin' ? 'Administrador' : 'Usuario Común';
+      const statusClass = isActive ? 'user-status-active' : 'user-status-inactive';
+      const statusText = isActive ? 'Activo' : 'Inactivo';
+      const toggleActionText = isActive ? 'Desactivar' : 'Activar';
+      const toggleBtnClass = isActive ? 'btn-sm btn-outline' : 'btn-sm btn-primary';
+      
+      const isSelf = currentUser && currentUser.username === u.username;
+      
+      return `
+        <tr style="border-bottom: 0.5px solid var(--border);">
+          <td style="padding: 12px; font-weight:600; color:var(--text);">${u.username} ${isSelf ? ' <span style="font-size:11px;color:var(--text2);font-weight:normal;">(Tú)</span>' : ''}</td>
+          <td style="padding: 12px; color:var(--text2);">${roleText}</td>
+          <td style="padding: 12px;"><span class="${statusClass}">${statusText}</span></td>
+          <td style="padding: 12px; text-align: right; padding-right:16px;">
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+              <button class="btn btn-sm" onclick="openChangePasswordModal('${u.id}', '${u.username}')">Cambiar Contraseña</button>
+              ${isSelf ? '' : `<button class="btn ${toggleBtnClass}" onclick="toggleUserStatus('${u.id}', ${!isActive})">${toggleActionText}</button>`}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--red);">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function createUser() {
+  const uInput = document.getElementById('nu-username');
+  const pInput = document.getElementById('nu-password');
+  const rSelect = document.getElementById('nu-role');
+  
+  const username = uInput.value.trim();
+  const password = pInput.value;
+  const role = rSelect.value;
+  
+  if (!username || !password) {
+    showToast('Por favor complete todos los campos');
+    return;
+  }
+  
+  try {
+    await apiFetch('POST', '/users', { username, password, role });
+    showToast('Usuario creado correctamente');
+    uInput.value = '';
+    pInput.value = '';
+    closeModal();
+    loadUsers();
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
+}
+
+function openChangePasswordModal(userId, username) {
+  document.getElementById('cp-user-id').value = userId;
+  document.getElementById('cp-user-label').textContent = 'Usuario: ' + username;
+  document.getElementById('cp-password').value = '';
+  openModal('changePassword');
+}
+
+async function changeUserPassword() {
+  const userId = document.getElementById('cp-user-id').value;
+  const password = document.getElementById('cp-password').value;
+  
+  if (!password) {
+    showToast('Por favor ingrese la nueva contraseña');
+    return;
+  }
+  
+  try {
+    await apiFetch('PUT', `/users/${userId}/password`, { password });
+    showToast('Contraseña actualizada');
+    closeModal();
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
+}
+
+async function toggleUserStatus(userId, newStatus) {
+  try {
+    await apiFetch('PUT', `/users/${userId}/status`, { is_active: newStatus });
+    showToast('Estado del usuario actualizado');
+    loadUsers();
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape') closeModal();
   if(e.key==='Enter' && document.getElementById('modal-overlay').style.display==='flex') {
-    document.querySelectorAll('.modal-actions .btn-primary').forEach(b=>b.click());
+    const activeOverlay = Array.from(document.querySelectorAll('.overlay')).find(o => o.style.display === 'flex');
+    if (activeOverlay) {
+      const primaryBtn = activeOverlay.querySelector('.btn-primary');
+      if (primaryBtn) primaryBtn.click();
+    }
   }
 });
 
-async function init() {
+async function initApp() {
   loadLocal();
   updatePendingTab();
   renderProjects();
-  // Intentar cargar desde servidor
   try {
     await fetchAll();
     renderProjects();
@@ -1143,6 +1506,12 @@ async function init() {
     online = false;
     setSyncBadge('offline');
     showToast('Sin conexión al servidor — modo offline');
+  }
+}
+
+async function init() {
+  if (checkSession()) {
+    await initApp();
   }
 }
 
