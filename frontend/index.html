@@ -538,9 +538,20 @@ async function fetchAll() {
 }
 
 async function autoSync() {
-  if(!online || !pendingSync.length) return;
+  if(!online) return;
   setSyncBadge('syncing');
   try {
+    // Sincronizar cambios de usuarios pendientes primero
+    if (typeof syncUserChanges === 'function') {
+      try { await syncUserChanges(); } catch(e) { /* ignore */ }
+    }
+
+    if (!pendingSync.length) {
+      await fetchAll();
+      setSyncBadge('online');
+      return;
+    }
+
     // Construir payload
     const payload = { projects:[], persons:[], events:[], attendance:{}, assignments:[], unassignments:[] };
     for(const op of pendingSync) {
@@ -580,7 +591,8 @@ async function autoSync() {
 
 async function doSync() {
   if(!online) { showToast('Sin conexión. Activa internet primero.'); return; }
-  if(!pendingSync.length) { showToast('Todo ya está sincronizado.'); return; }
+  loadUserChanges();
+  if(!pendingSync.length && !pendingUserChanges.length) { showToast('Todo ya está sincronizado.'); return; }
   await autoSync();
 }
 
@@ -1297,7 +1309,60 @@ function renderPending() {
 // ─── Sesión de Usuario ────────────────────────────────────────────────────────
 let currentUser = null;
 
+// Cache local de usuarios (para modo offline)
+let usersCache = []; // { id, username, role, is_active, offlineHash }
+
+function saveUsersLocal() {
+  try { localStorage.setItem('att_users_cache', JSON.stringify(usersCache)); } catch(e) {}
+}
+function loadUsersLocal() {
+  try {
+    const raw = localStorage.getItem('att_users_cache');
+    if (raw) usersCache = JSON.parse(raw);
+  } catch(e) {}
+}
+
+// ─── Offline Password Hashing (Web Crypto PBKDF2) ────────────────────────────
+async function offlineHashPassword(password, saltHex) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const salt = hexToBytes(saltHex);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100000 }, keyMaterial, 256
+  );
+  return bytesToHex(new Uint8Array(bits));
+}
+
+async function offlineVerifyPassword(password, storedHash) {
+  // storedHash format: "salt_hex$hash_hex"
+  try {
+    const [saltHex, expectedHash] = storedHash.split('$');
+    const actualHash = await offlineHashPassword(password, saltHex);
+    return actualHash === expectedHash;
+  } catch(e) { return false; }
+}
+
+async function createOfflineHash(password) {
+  const saltArray = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = bytesToHex(saltArray);
+  const hashHex = await offlineHashPassword(password, saltHex);
+  return saltHex + '$' + hashHex;
+}
+
+function hexToBytes(hex) {
+  const arr = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) arr[i / 2] = parseInt(hex.substr(i, 2), 16);
+  return arr;
+}
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ─── checkSession / Login / Logout ───────────────────────────────────────────
 function checkSession() {
+  loadUsersLocal();
   const token = localStorage.getItem('token');
   const username = localStorage.getItem('username');
   const role = localStorage.getItem('role');
@@ -1308,13 +1373,8 @@ function checkSession() {
     document.getElementById('app-container').style.display = 'flex';
     document.getElementById('userSessionBadge').textContent = username + ' (' + (role === 'admin' ? 'Admin' : 'Usuario') + ')';
     
-    // Mostrar/ocultar tab de usuarios
     const tabUsers = document.getElementById('tab-users');
-    if (role === 'admin') {
-      tabUsers.style.display = 'flex';
-    } else {
-      tabUsers.style.display = 'none';
-    }
+    tabUsers.style.display = role === 'admin' ? 'flex' : 'none';
     return true;
   } else {
     currentUser = null;
@@ -1328,7 +1388,8 @@ async function performLogin() {
   const uInput = document.getElementById('login-username');
   const pInput = document.getElementById('login-password');
   const errEl = document.getElementById('login-error-msg');
-  
+  const btnLogin = document.querySelector('#login-container .btn-primary');
+
   const username = uInput.value.trim();
   const password = pInput.value;
   
@@ -1338,6 +1399,10 @@ async function performLogin() {
     return;
   }
   
+  if (btnLogin) { btnLogin.disabled = true; btnLogin.textContent = 'Ingresando...'; }
+  errEl.style.display = 'none';
+
+  // ── 1. Intentar login en servidor ────────────────────────────────────────
   try {
     const res = await fetch(API + '/auth/login', {
       method: 'POST',
@@ -1345,141 +1410,324 @@ async function performLogin() {
       body: JSON.stringify({ username, password })
     });
     
-    if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('username', data.username);
+      localStorage.setItem('role', data.role);
+      
+      // Guardar credencial offline para este usuario
+      const offlineHash = await createOfflineHash(password);
+      const existingIdx = usersCache.findIndex(u => u.username === data.username);
+      if (existingIdx >= 0) {
+        usersCache[existingIdx].offlineHash = offlineHash;
+        usersCache[existingIdx].role = data.role;
+        usersCache[existingIdx].is_active = true;
+      } else {
+        usersCache.push({ username: data.username, role: data.role, is_active: true, offlineHash });
+      }
+      saveUsersLocal();
+
+      uInput.value = ''; pInput.value = '';
+      if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+      if (checkSession()) {
+        showToast('Sesión iniciada');
+        await initApp();
+      }
+      return;
+    } else {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.detail || 'Usuario o contraseña incorrectos');
     }
+  } catch (fetchErr) {
+    // Solo continuar offline si el error es de red (sin conexión)
+    const isNetworkError = fetchErr.message.includes('Failed to fetch') || fetchErr.message.includes('NetworkError') || fetchErr.message.includes('No se pudo conectar');
     
-    const data = await res.json();
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('username', data.username);
-    localStorage.setItem('role', data.role);
-    
-    uInput.value = '';
-    pInput.value = '';
-    errEl.style.display = 'none';
-    
-    if (checkSession()) {
-      showToast('Sesión iniciada con éxito');
-      await initApp();
+    if (!isNetworkError) {
+      // Error de autenticación real
+      if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+      errEl.textContent = fetchErr.message;
+      errEl.style.display = 'block';
+      return;
     }
-  } catch (e) {
-    errEl.textContent = e.message;
+  }
+
+  // ── 2. Sin internet: validar con cache offline ───────────────────────────
+  loadUsersLocal();
+  const cachedUser = usersCache.find(u => u.username === username);
+  
+  if (!cachedUser) {
+    if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+    errEl.textContent = 'Sin conexión. Este usuario nunca ha iniciado sesión en este dispositivo.';
     errEl.style.display = 'block';
+    return;
+  }
+  
+  if (!cachedUser.is_active) {
+    if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+    errEl.textContent = 'Usuario inactivo. Contacte al administrador.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const valid = cachedUser.offlineHash ? await offlineVerifyPassword(password, cachedUser.offlineHash) : false;
+  
+  if (!valid) {
+    if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+    errEl.textContent = 'Contraseña incorrecta (modo offline).';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  // Login offline exitoso — usar token "offline" provisional
+  localStorage.setItem('token', 'offline-session-' + uid());
+  localStorage.setItem('username', cachedUser.username);
+  localStorage.setItem('role', cachedUser.role);
+  
+  uInput.value = ''; pInput.value = '';
+  if (btnLogin) { btnLogin.disabled = false; btnLogin.textContent = 'Ingresar'; }
+  if (checkSession()) {
+    showToast('Sesión iniciada (modo offline)');
+    await initApp();
   }
 }
 
 async function performLogout() {
   const token = localStorage.getItem('token');
-  if (token) {
+  if (token && !token.startsWith('offline-session-')) {
     try {
       await fetch(API + '/auth/logout', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token }
       });
     } catch (e) {
-      console.error('Logout request failed:', e);
+      // Ignore network errors on logout
     }
   }
+  // Preservar usuarios cacheados y att_cache para offline
+  const attCache = localStorage.getItem('att_cache');
+  const usersData = localStorage.getItem('att_users_cache');
   localStorage.clear();
+  if (attCache) localStorage.setItem('att_cache', attCache);
+  if (usersData) localStorage.setItem('att_users_cache', usersData);
+
   checkSession();
   showToast('Sesión cerrada');
 }
 
-// ─── Gestión de Usuarios (Sólo Admin) ──────────────────────────────────────────
+// ─── Gestión de Usuarios (Admin) con soporte offline ─────────────────────────
+// Cola de cambios de usuarios pendientes de sincronizar
+let pendingUserChanges = [];
+
+function saveUserChanges() {
+  try { localStorage.setItem('att_user_changes', JSON.stringify(pendingUserChanges)); } catch(e) {}
+}
+function loadUserChanges() {
+  try {
+    const raw = localStorage.getItem('att_user_changes');
+    if (raw) pendingUserChanges = JSON.parse(raw);
+  } catch(e) {}
+}
+
+async function syncUserChanges() {
+  if (!pendingUserChanges.length) return;
+  const remaining = [];
+  for (const change of pendingUserChanges) {
+    try {
+      if (change.type === 'create_user') {
+        await apiFetch('POST', '/users', change.data);
+      } else if (change.type === 'toggle_status') {
+        await apiFetch('PUT', `/users/${change.data.id}/status`, { is_active: change.data.is_active });
+      } else if (change.type === 'change_password') {
+        await apiFetch('PUT', `/users/${change.data.id}/password`, { password: change.data.password });
+      }
+    } catch(e) {
+      remaining.push(change); // retry later
+    }
+  }
+  pendingUserChanges = remaining;
+  saveUserChanges();
+}
+
 async function loadUsers() {
+  loadUserChanges();
   const tbody = document.getElementById('users-table-body');
   tbody.innerHTML = `<tr><td colspan="4" class="loading"><i class="ti ti-loader"></i> Cargando usuarios...</td></tr>`;
+  
+  let users = null;
+  let isOfflineView = false;
+
+  // Intentar cargar del servidor
   try {
-    const users = await apiFetch('GET', '/users');
-    tbody.innerHTML = users.map(u => {
-      const isActive = u.is_active;
-      const roleText = u.role === 'admin' ? 'Administrador' : 'Usuario Común';
-      const statusClass = isActive ? 'user-status-active' : 'user-status-inactive';
-      const statusText = isActive ? 'Activo' : 'Inactivo';
-      const toggleActionText = isActive ? 'Desactivar' : 'Activar';
-      const toggleBtnClass = isActive ? 'btn-sm btn-outline' : 'btn-sm btn-primary';
-      
-      const isSelf = currentUser && currentUser.username === u.username;
-      
-      return `
-        <tr style="border-bottom: 0.5px solid var(--border);">
-          <td style="padding: 12px; font-weight:600; color:var(--text);">${u.username} ${isSelf ? ' <span style="font-size:11px;color:var(--text2);font-weight:normal;">(Tú)</span>' : ''}</td>
-          <td style="padding: 12px; color:var(--text2);">${roleText}</td>
-          <td style="padding: 12px;"><span class="${statusClass}">${statusText}</span></td>
-          <td style="padding: 12px; text-align: right; padding-right:16px;">
-            <div style="display:flex; gap:8px; justify-content:flex-end;">
-              <button class="btn btn-sm" onclick="openChangePasswordModal('${u.id}', '${u.username}')">Cambiar Contraseña</button>
-              ${isSelf ? '' : `<button class="btn ${toggleBtnClass}" onclick="toggleUserStatus('${u.id}', ${!isActive})">${toggleActionText}</button>`}
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--red);">Error: ${e.message}</td></tr>`;
+    users = await apiFetch('GET', '/users');
+    // Actualizar cache local con datos del servidor
+    users.forEach(u => {
+      const idx = usersCache.findIndex(c => c.username === u.username);
+      if (idx >= 0) {
+        usersCache[idx].id = u.id;
+        usersCache[idx].role = u.role;
+        usersCache[idx].is_active = u.is_active;
+      } else {
+        usersCache.push({ id: u.id, username: u.username, role: u.role, is_active: u.is_active });
+      }
+    });
+    saveUsersLocal();
+  } catch(e) {
+    // Sin conexión: usar cache local
+    isOfflineView = true;
+    users = usersCache.map(u => ({ id: u.id || uid(), username: u.username, role: u.role, is_active: u.is_active !== false }));
   }
+
+  const pendingBadge = pendingUserChanges.length > 0
+    ? `<div style="font-size:12px;color:var(--amber);margin-bottom:12px;display:flex;align-items:center;gap:6px;"><i class="ti ti-cloud-off"></i> ${pendingUserChanges.length} cambio(s) pendiente(s) de sincronizar cuando haya conexión.</div>`
+    : '';
+
+  const offlineBadge = isOfflineView
+    ? `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:6px;"><i class="ti ti-wifi-off"></i> Modo offline — mostrando datos guardados localmente.</div>`
+    : '';
+
+  if (!users || users.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text2);">${pendingBadge}${offlineBadge}No hay usuarios registrados.</td></tr>`;
+    return;
+  }
+
+  // Mostrar badges sobre la tabla
+  const tableDiv = document.querySelector('#view-users .card');
+  let badgeContainer = document.getElementById('users-badges');
+  if (!badgeContainer) {
+    badgeContainer = document.createElement('div');
+    badgeContainer.id = 'users-badges';
+    tableDiv.parentNode.insertBefore(badgeContainer, tableDiv);
+  }
+  badgeContainer.innerHTML = pendingBadge + offlineBadge;
+
+  tbody.innerHTML = users.map(u => {
+    const isActive = u.is_active !== false;
+    const roleText = u.role === 'admin' ? 'Administrador' : 'Usuario Común';
+    const statusClass = isActive ? 'user-status-active' : 'user-status-inactive';
+    const statusText = isActive ? 'Activo' : 'Inactivo';
+    const toggleActionText = isActive ? 'Desactivar' : 'Activar';
+    const toggleBtnClass = isActive ? 'btn-sm' : 'btn-sm btn-primary';
+    const isSelf = currentUser && currentUser.username === u.username;
+    
+    return `
+      <tr style="border-bottom: 0.5px solid var(--border);">
+        <td style="padding: 12px; font-weight:600; color:var(--text);">${u.username}${isSelf ? ' <span style="font-size:11px;color:var(--text2);font-weight:normal;">(Tú)</span>' : ''}</td>
+        <td style="padding: 12px; color:var(--text2);">${roleText}</td>
+        <td style="padding: 12px;"><span class="${statusClass}">${statusText}</span></td>
+        <td style="padding: 12px; text-align: right; padding-right:16px;">
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-sm" onclick="openChangePasswordModal('${u.id}', '${u.username}')">Cambiar Contraseña</button>
+            ${isSelf ? '' : `<button class="btn ${toggleBtnClass}" onclick="toggleUserStatus('${u.id}', '${u.username}', ${!isActive})">${toggleActionText}</button>`}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 async function createUser() {
   const uInput = document.getElementById('nu-username');
   const pInput = document.getElementById('nu-password');
   const rSelect = document.getElementById('nu-role');
-  
+
   const username = uInput.value.trim();
   const password = pInput.value;
   const role = rSelect.value;
-  
-  if (!username || !password) {
-    showToast('Por favor complete todos los campos');
-    return;
-  }
-  
+
+  if (!username || !password) { showToast('Por favor complete todos los campos'); return; }
+
+  // Intentar en servidor
   try {
-    await apiFetch('POST', '/users', { username, password, role });
-    showToast('Usuario creado correctamente');
-    uInput.value = '';
-    pInput.value = '';
-    closeModal();
-    loadUsers();
-  } catch (e) {
-    showToast('Error: ' + e.message);
+    const newUser = await apiFetch('POST', '/users', { username, password, role });
+    // Crear hash offline para el nuevo usuario
+    const offlineHash = await createOfflineHash(password);
+    usersCache.push({ id: newUser.id, username: newUser.username, role: newUser.role, is_active: true, offlineHash });
+    saveUsersLocal();
+    showToast('Usuario creado');
+  } catch(e) {
+    const isNetError = e.message.includes('No se pudo conectar') || e.message.includes('Failed to fetch');
+    if (!isNetError) { showToast('Error: ' + e.message); return; }
+
+    // Offline: guardar en cache local y en pendingUserChanges
+    const tempId = 'pending-' + uid();
+    const offlineHash = await createOfflineHash(password);
+    usersCache.push({ id: tempId, username, role, is_active: true, offlineHash });
+    saveUsersLocal();
+    loadUserChanges();
+    pendingUserChanges.push({ type: 'create_user', data: { username, password, role } });
+    saveUserChanges();
+    showToast('Sin conexión — usuario guardado localmente, se sincronizará después');
   }
+  
+  uInput.value = ''; pInput.value = '';
+  closeModal();
+  loadUsers();
 }
 
 function openChangePasswordModal(userId, username) {
   document.getElementById('cp-user-id').value = userId;
   document.getElementById('cp-user-label').textContent = 'Usuario: ' + username;
   document.getElementById('cp-password').value = '';
+  // Guardar username para actualizar offline hash
+  document.getElementById('cp-user-id').dataset.username = username;
   openModal('changePassword');
 }
 
 async function changeUserPassword() {
   const userId = document.getElementById('cp-user-id').value;
   const password = document.getElementById('cp-password').value;
-  
-  if (!password) {
-    showToast('Por favor ingrese la nueva contraseña');
-    return;
-  }
-  
+  const username = document.getElementById('cp-user-id').dataset.username || '';
+
+  if (!password) { showToast('Por favor ingrese la nueva contraseña'); return; }
+
+  // Actualizar offline hash localmente siempre
+  const offlineHash = await createOfflineHash(password);
+  const idx = usersCache.findIndex(u => u.username === username || u.id === userId);
+  if (idx >= 0) { usersCache[idx].offlineHash = offlineHash; saveUsersLocal(); }
+
   try {
     await apiFetch('PUT', `/users/${userId}/password`, { password });
     showToast('Contraseña actualizada');
-    closeModal();
-  } catch (e) {
-    showToast('Error: ' + e.message);
+  } catch(e) {
+    const isNetError = e.message.includes('No se pudo conectar') || e.message.includes('Failed to fetch');
+    if (isNetError) {
+      loadUserChanges();
+      // Reemplazar cambio previo de password para mismo usuario si existe
+      pendingUserChanges = pendingUserChanges.filter(c => !(c.type === 'change_password' && c.data.id === userId));
+      pendingUserChanges.push({ type: 'change_password', data: { id: userId, password } });
+      saveUserChanges();
+      showToast('Sin conexión — contraseña actualizada localmente, se sincronizará después');
+    } else {
+      showToast('Error: ' + e.message); return;
+    }
   }
+  closeModal();
 }
 
-async function toggleUserStatus(userId, newStatus) {
+async function toggleUserStatus(userId, username, newStatus) {
+  // Actualizar cache local inmediatamente
+  const idx = usersCache.findIndex(u => u.username === username || u.id === userId);
+  if (idx >= 0) { usersCache[idx].is_active = newStatus; saveUsersLocal(); }
+
   try {
     await apiFetch('PUT', `/users/${userId}/status`, { is_active: newStatus });
     showToast('Estado del usuario actualizado');
-    loadUsers();
-  } catch (e) {
-    showToast('Error: ' + e.message);
+  } catch(e) {
+    const isNetError = e.message.includes('No se pudo conectar') || e.message.includes('Failed to fetch');
+    if (isNetError) {
+      loadUserChanges();
+      pendingUserChanges = pendingUserChanges.filter(c => !(c.type === 'toggle_status' && c.data.id === userId));
+      pendingUserChanges.push({ type: 'toggle_status', data: { id: userId, is_active: newStatus } });
+      saveUserChanges();
+      showToast('Sin conexión — cambio guardado localmente, se sincronizará después');
+    } else {
+      // Revertir en caso de error real
+      if (idx >= 0) { usersCache[idx].is_active = !newStatus; saveUsersLocal(); }
+      showToast('Error: ' + e.message); return;
+    }
   }
+  loadUsers();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
