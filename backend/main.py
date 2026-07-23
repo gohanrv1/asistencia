@@ -49,6 +49,7 @@ class Person(Base):
     apellidos  = Column(String, nullable=False)
     cedula     = Column(String, nullable=False)
     cargo      = Column(String, nullable=False)
+    tipo       = Column(String, nullable=False, default="asistente")  # "asistente" o "responsable"
     correo     = Column(String, default="")
     celular    = Column(String, default="")
     projects   = relationship("Project", secondary=project_person, back_populates="persons")
@@ -126,7 +127,16 @@ try:
     print("🔍 Inicializando base de datos...")
     # Crear tablas si no existen (checkfirst=True evita errores si ya existen)
     Base.metadata.create_all(bind=engine, checkfirst=True)
-    
+
+    # Migración: asegurar que la columna 'tipo' exista en persons
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("SELECT tipo FROM persons LIMIT 1"))
+        except Exception:
+            print("⚠️  Columna 'tipo' no encontrada en persons, agregando...")
+            conn.execute(text("ALTER TABLE persons ADD COLUMN tipo TEXT NOT NULL DEFAULT 'asistente'"))
+            conn.commit()
+
     # Verificar que el esquema es correcto (comprobando tablas críticas)
     with engine.connect() as conn:
         conn.execute(text("SELECT cedula FROM persons LIMIT 1"))
@@ -300,6 +310,7 @@ class PersonCreate(BaseModel):
     apellidos: str
     cedula: str
     cargo: str
+    tipo: Optional[str] = "asistente"  # "asistente" o "responsable"
     correo: Optional[str] = ""
     celular: Optional[str] = ""
     project_id: Optional[str] = None
@@ -310,6 +321,7 @@ class PersonOut(BaseModel):
     apellidos: str
     cedula: str
     cargo: str
+    tipo: str
     correo: str
     celular: str
 
@@ -494,6 +506,7 @@ def list_persons(project_id: str, current_user: User = Depends(get_current_user)
 
 @app.post("/api/persons", response_model=PersonOut, status_code=201)
 def create_person(data: PersonCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    tipo = data.tipo if data.tipo in ("asistente", "responsable") else "asistente"
     person = db.query(Person).filter(Person.cedula == data.cedula).first()
     if not person:
         person = Person(
@@ -502,10 +515,14 @@ def create_person(data: PersonCreate, current_user: User = Depends(get_current_u
             apellidos=data.apellidos,
             cedula=data.cedula,
             cargo=data.cargo,
+            tipo=tipo,
             correo=data.correo or "",
             celular=data.celular or ""
         )
         db.add(person)
+    else:
+        # Actualizar tipo si la persona ya existe y se envía explícitamente
+        person.tipo = tipo
     
     if data.project_id:
         proj = db.query(Project).filter(Project.id == data.project_id).first()
@@ -552,7 +569,7 @@ def list_project_persons(current_user: User = Depends(get_current_user), db: Ses
 
 @app.get("/api/persons/template")
 def download_csv_template(current_user: User = Depends(get_current_user)):
-    csv_content = "nombres,apellidos,cedula,cargo,correo,celular\nJuan,Perez,12345678,Gerente,juan@example.com,555-1234\nMaria,Gomez,87654321,Analista,,555-5678\n"
+    csv_content = "nombres,apellidos,cedula,cargo,tipo,correo,celular\nJuan,Perez,12345678,Gerente,asistente,juan@example.com,555-1234\nMaria,Gomez,87654321,Analista,responsable,,555-5678\n"
     output = io.StringIO()
     output.write(csv_content)
     output.seek(0)
@@ -582,6 +599,8 @@ def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User
         apellidos = row.get("apellidos", "").strip()
         cedula = row.get("cedula", "").strip()
         cargo = row.get("cargo", "").strip()
+        tipo_raw = row.get("tipo", "").strip().lower()
+        tipo = tipo_raw if tipo_raw in ("asistente", "responsable") else "asistente"
         
         if not nombres or not apellidos or not cedula or not cargo:
             continue
@@ -597,11 +616,14 @@ def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User
                 apellidos=apellidos,
                 cedula=cedula,
                 cargo=cargo,
+                tipo=tipo,
                 correo=correo,
                 celular=celular
             )
             db.add(person)
             created_count += 1
+        else:
+            person.tipo = tipo
             
         if person not in proj.persons:
             proj.persons.append(person)
@@ -677,6 +699,7 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     db.flush()
 
     for p in payload.persons:
+        tipo = p.tipo if p.tipo in ("asistente", "responsable") else "asistente"
         person = db.query(Person).filter(Person.id == p.id).first()
         if not person:
             person = Person(
@@ -685,11 +708,14 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
                 apellidos=p.apellidos,
                 cedula=p.cedula,
                 cargo=p.cargo,
+                tipo=tipo,
                 correo=p.correo or "",
                 celular=p.celular or ""
             )
             db.add(person)
             synced["persons"] += 1
+        else:
+            person.tipo = tipo
         
         if p.project_id:
             proj = db.query(Project).filter(Project.id == p.project_id).first()
@@ -763,9 +789,9 @@ def get_stats(current_user: User = Depends(get_current_user), db: Session = Depe
     recent_evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
     for e in recent_evs:
         present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
-        # número esperado = número de personas asignadas al proyecto
+        # número esperado = número de asistentes asignados al proyecto
         proj = db.query(Project).filter(Project.id == e.project_id).first()
-        total_expected = len(proj.persons) if proj else 0
+        total_expected = len([p for p in (proj.persons if proj else []) if p.tipo == "asistente"]) if proj else 0
         pct = round((present / total_expected * 100), 1) if total_expected else 0
         resp = None
         if e.responsible_id:

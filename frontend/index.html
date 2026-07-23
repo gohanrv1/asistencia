@@ -357,6 +357,11 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <label>Apellidos</label><input type="text" id="person-apellidos" placeholder="Ej: López Gómez">
         <label>Cédula</label><input type="text" id="person-cedula" placeholder="Ej: 10203040">
         <label>Cargo</label><input type="text" id="person-cargo" placeholder="Ej: Ingeniera, Estudiante">
+        <label>Rol</label>
+        <select id="person-tipo" style="margin-bottom: 12px;">
+          <option value="asistente">Asistente</option>
+          <option value="responsable">Responsable</option>
+        </select>
         <label>Correo (opcional)</label><input type="email" id="person-correo" placeholder="Ej: ana@example.com">
         <label>Celular (opcional)</label><input type="text" id="person-celular" placeholder="Ej: 3001234567">
         <div class="modal-actions">
@@ -368,7 +373,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <!-- Contenido Pestaña: CSV -->
       <div id="person-tab-csv" class="modal-tab-content" style="display:none;">
         <p style="font-size: 13px; color: var(--text2); margin-bottom: 12px;">
-          Carga un archivo CSV con las columnas: <code style="background:var(--bg2); padding: 2px 4px; border-radius: 4px;">nombres,apellidos,cedula,cargo,correo,celular</code>
+          Carga un archivo CSV con las columnas: <code style="background:var(--bg2); padding: 2px 4px; border-radius: 4px;">nombres,apellidos,cedula,cargo,tipo,correo,celular</code>. El campo <strong>tipo</strong> debe ser <code>asistente</code> o <code>responsable</code>.
         </p>
         <div style="margin-bottom: 16px;">
           <a href="#" onclick="downloadCsvTemplate(event)" class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 4px; color: var(--purple); text-decoration: none; border-color: var(--purple);"><i class="ti ti-download"></i>Descargar plantilla CSV</a>
@@ -623,9 +628,13 @@ function openModal(name) {
     sel.innerHTML=cache.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     if(currentProject) sel.value=currentProject.id;
     document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
-    // populate responsible select with persons
+    // populate responsible select with responsables only
     const resp = document.getElementById('ev-responsible');
-    if(resp) resp.innerHTML = cache.persons.map(p=>`<option value="${p.id}">${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
+    if(resp) {
+      const responsables = cache.persons.filter(p => p.tipo === 'responsable');
+      resp.innerHTML = '<option value="">Sin responsable</option>' +
+        responsables.map(p=>`<option value="${p.id}">${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
+    }
   }
   setTimeout(()=>{ const f=document.querySelector(`#modal-${name} input`); if(f)f.focus(); },50);
 }
@@ -636,6 +645,8 @@ function closeModal() {
     'np-name','np-desc','person-name','person-role','ev-name','ev-notes',
     'person-nombres', 'person-apellidos', 'person-cedula', 'person-cargo', 'person-correo', 'person-celular', 'person-csv-file'
   ].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
+  const tipoEl = document.getElementById('person-tipo');
+  if(tipoEl) tipoEl.value = 'asistente';
 }
 document.getElementById('modal-overlay').addEventListener('click',e=>{ if(e.target.id==='modal-overlay') closeModal(); });
 
@@ -712,9 +723,10 @@ function openPersonModal() {
     select.style.display = 'block';
     noMsg.style.display = 'none';
     btnAssign.disabled = false;
-    select.innerHTML = availablePersons.map(p => 
-      `<option value="${p.id}">${p.nombres || p.name || ''} ${p.apellidos || ''} (${p.cedula || 'Sin ID'}) - ${p.cargo || p.role || 'Sin cargo'}</option>`
-    ).join('');
+    select.innerHTML = availablePersons.map(p => {
+      const tipoLabel = (p.tipo || 'asistente') === 'asistente' ? 'Asistente' : 'Responsable';
+      return `<option value="${p.id}">${p.nombres || p.name || ''} ${p.apellidos || ''} (${p.cedula || 'Sin ID'}) - ${p.cargo || p.role || 'Sin cargo'} [${tipoLabel}]</option>`;
+    }).join('');
   }
   
   openModal('newPerson');
@@ -837,6 +849,8 @@ async function createNewPerson() {
   const apellidos = document.getElementById('person-apellidos').value.trim();
   const cedula = document.getElementById('person-cedula').value.trim();
   const cargo = document.getElementById('person-cargo').value.trim();
+  const tipoEl = document.getElementById('person-tipo');
+  const tipo = tipoEl && ['asistente','responsable'].includes(tipoEl.value) ? tipoEl.value : 'asistente';
   const correo = document.getElementById('person-correo').value.trim();
   const celular = document.getElementById('person-celular').value.trim();
   
@@ -852,6 +866,7 @@ async function createNewPerson() {
     apellidos,
     cedula,
     cargo,
+    tipo,
     correo,
     celular,
     project_id: currentProject.id
@@ -1066,7 +1081,7 @@ async function markAll(val) {
   const projectPersonIds = (cache.project_persons || [])
     .filter(ap => ap.project_id === currentEvent.project_id)
     .map(ap => ap.person_id);
-  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente');
   
   persons.forEach(p=>{ att[p.id]=val; });
   if(online) {
@@ -1117,6 +1132,8 @@ function renderProjectDetail(p) {
     .filter(ap => ap.project_id === p.id)
     .map(ap => ap.person_id);
   const persons = cache.persons.filter(person => projectPersonIds.includes(person.id));
+  const asistentes = persons.filter(p => (p.tipo || 'asistente') === 'asistente');
+  const responsables = persons.filter(p => p.tipo === 'responsable');
   
   const events=cache.events.filter(e=>e.project_id===p.id).sort((a,b)=>b.date.localeCompare(a.date));
   const evWithAtt=events.filter(e=>cache.attendance[e.id]&&Object.keys(cache.attendance[e.id]).length>0).length;
@@ -1126,9 +1143,9 @@ function renderProjectDetail(p) {
       ${p.description?`<div style="font-size:14px;color:var(--text2);margin-top:2px">${p.description}</div>`:''}
     </div>
     <div class="stats-row">
-      <div class="stat-card"><div class="stat-num">${persons.length}</div><div class="stat-lbl">Personas</div></div>
+      <div class="stat-card"><div class="stat-num">${asistentes.length}</div><div class="stat-lbl">Asistentes</div></div>
+      <div class="stat-card"><div class="stat-num">${responsables.length}</div><div class="stat-lbl">Responsables</div></div>
       <div class="stat-card"><div class="stat-num">${events.length}</div><div class="stat-lbl">Eventos</div></div>
-      <div class="stat-card"><div class="stat-num">${evWithAtt}</div><div class="stat-lbl">Con asistencia</div></div>
     </div>
     <div class="sh" style="margin-top:8px"><span style="font-weight:500">Personas</span>
       <button class="btn btn-sm" onclick="openPersonModal()"><i class="ti ti-user-plus"></i>Agregar</button>
@@ -1144,6 +1161,7 @@ function renderProjectDetail(p) {
               <div style="font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">
                 <span><strong>Cédula:</strong> ${person.cedula || 'N/A'}</span>
                 <span><strong>Cargo:</strong> ${person.cargo || person.role || 'Sin cargo'}</span>
+                <span><span class="badge ${(person.tipo || 'asistente') === 'asistente' ? 'bp' : 'bt'}">${(person.tipo || 'asistente') === 'asistente' ? 'Asistente' : 'Responsable'}</span></span>
                 ${person.correo ? `<span><strong>Correo:</strong> ${person.correo}</span>` : ''}
                 ${person.celular ? `<span><strong>Celular:</strong> ${person.celular}</span>` : ''}
               </div>
@@ -1159,7 +1177,7 @@ function renderProjectDetail(p) {
       :events.map(ev=>{
         const att=cache.attendance[ev.id]||{};
         const present=Object.values(att).filter(v=>v).length;
-        const total=persons.length;
+        const total=asistentes.length;
         const pct=total?Math.round(present/total*100):0;
         return `<div class="card">
           <div class="card-row">
@@ -1192,9 +1210,10 @@ function renderAllEvents() {
       .filter(ap => ap.project_id === ev.project_id)
       .map(ap => ap.person_id);
     const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+    const asistentes = persons.filter(p => (p.tipo || 'asistente') === 'asistente');
     const att=cache.attendance[ev.id]||{};
     const present=Object.values(att).filter(v=>v).length;
-    const total=persons.length;
+    const total=asistentes.length;
     const pct=total?Math.round(present/total*100):0;
     return `<div class="card">
       <div class="card-row">
@@ -1249,7 +1268,7 @@ function renderAttendance() {
   const projectPersonIds = (cache.project_persons || [])
     .filter(ap => ap.project_id === ev.project_id)
     .map(ap => ap.person_id);
-  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
+  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente');
   
   const att=cache.attendance[ev.id]||{};
   const present=persons.filter(p=>att[p.id]).length;
@@ -1271,7 +1290,7 @@ function renderAttendance() {
       <button class="btn btn-sm" onclick="markAll(false)"><i class="ti ti-x"></i>Todos ausentes</button>
     </div>
     ${persons.length===0
-      ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este proyecto no tiene personas.</p></div>`
+      ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este proyecto no tiene asistentes registrados.</p></div>`
       :`<div class="pbox">${persons.map((p,i)=>{
           const isPresent=!!att[p.id];
           return `<div class="person-row ${isPresent?'present':'absent'}" onclick="toggleAtt('${p.id}')">
