@@ -763,7 +763,14 @@ async function loadDashboard(){
           </div>`).join('') : '<div class="empty">No hay eventos recientes</div>'}
       </div>
     `;
-  }catch(e){ el.innerHTML = `<div class="card">Error al cargar estadísticas: ${e.message}</div>` }
+  }catch(e){ 
+    el.innerHTML = `
+      <div class="empty" style="padding:48px 20px;">
+        <i class="ti ti-chart-pie-off"></i>
+        <p>No hay estadísticas disponibles aún.<br>Crea proyectos, eventos y registra asistencia para ver el dashboard.</p>
+      </div>
+    `; 
+  }
 }
 
 function downloadDB(){
