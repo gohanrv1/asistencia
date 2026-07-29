@@ -1,3 +1,9 @@
+import sys
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +22,9 @@ import shutil
 import time
 import hashlib
 import secrets
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 
 # ── Base de datos ─────────────────────────────────────────────────────────────
@@ -772,6 +781,209 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
 
     db.commit()
     return {"ok": True, "synced": synced}
+
+
+# ── Helpers para reportes Excel ───────────────────────────────────────────────
+def _style_header(ws, row_idx):
+    header_fill = PatternFill(start_color="0C447C", end_color="0C447C", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for cell in ws[row_idx]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_align
+        cell.border = border
+
+
+def _auto_width(ws):
+    for col in ws.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            try:
+                val_len = len(str(cell.value)) if cell.value is not None else 0
+                if val_len > max_length:
+                    max_length = val_len
+            except Exception:
+                pass
+        ws.column_dimensions[col_letter].width = min(max(max_length + 2, 10), 50)
+
+
+def _build_excel_report(db: Session) -> io.BytesIO:
+    wb = Workbook()
+    # Eliminar hoja por defecto y crear las 3 personalizadas
+    wb.remove(wb.active)
+
+    # ── Hoja 1: Resumen General ───────────────────────────────────────────────
+    ws_summary = wb.create_sheet("Resumen General")
+    ws_summary.append(["INFORME CONSORCIO META TIC - ASISTENCIA"])
+    ws_summary.append(["Generado el", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")])
+    ws_summary.append([])
+
+    projects = db.query(Project).all()
+    persons = db.query(Person).all()
+    events = db.query(Event).all()
+    total_att = db.query(Attendance).count()
+    total_present = db.query(Attendance).filter(Attendance.present == True).count()
+    attendance_pct = round((total_present / total_att * 100), 1) if total_att else 0
+
+    summary_data = [
+        ["Métrica", "Valor"],
+        ["Total de proyectos", len(projects)],
+        ["Total de personas registradas", len(persons)],
+        ["Total de eventos", len(events)],
+        ["Total de registros de asistencia", total_att],
+        ["Total de presentes", total_present],
+        ["Total de ausentes", total_att - total_present],
+        ["Porcentaje de asistencia", f"{attendance_pct}%"],
+    ]
+    for row in summary_data:
+        ws_summary.append(row)
+    _style_header(ws_summary, 4)
+    ws_summary.merge_cells("A1:B1")
+    ws_summary["A1"].font = Font(size=16, bold=True, color="0C447C")
+    ws_summary["A1"].alignment = Alignment(horizontal="center")
+    ws_summary["A2"].font = Font(italic=True, color="666666")
+    _auto_width(ws_summary)
+
+    # ── Hoja 2: Asistencia por Evento ─────────────────────────────────────────
+    ws_events = wb.create_sheet("Asistencia por Evento")
+    ws_events.append([
+        "Evento", "Fecha", "Proyecto", "Responsable", "Asistentes esperados",
+        "Presentes", "Ausentes", "% Asistencia", "Firma promedio"
+    ])
+    _style_header(ws_events, 1)
+
+    for ev in events:
+        proj = ev.project
+        responsible = ""
+        if ev.responsible_id:
+            resp = db.query(Person).filter(Person.id == ev.responsible_id).first()
+            if resp:
+                responsible = f"{resp.nombres} {resp.apellidos}".strip()
+
+        expected = len([p for p in (proj.persons if proj else []) if p.tipo == "asistente"]) if proj else 0
+        present = db.query(Attendance).filter(Attendance.event_id == ev.id, Attendance.present == True).count()
+        absent = expected - present
+        pct = round((present / expected * 100), 1) if expected else 0
+        signed = db.query(Attendance).filter(
+            Attendance.event_id == ev.id,
+            Attendance.present == True,
+            Attendance.signature != ""
+        ).count()
+        sign_pct = f"{round((signed / present * 100), 1)}%" if present else "N/A"
+
+        ws_events.append([
+            ev.name,
+            ev.date,
+            proj.name if proj else "",
+            responsible,
+            expected,
+            present,
+            absent if absent >= 0 else 0,
+            f"{pct}%",
+            sign_pct
+        ])
+    _auto_width(ws_events)
+
+    # ── Hoja 3: Asistencia por Proyecto ───────────────────────────────────────
+    ws_proj = wb.create_sheet("Asistencia por Proyecto")
+    ws_proj.append([
+        "Proyecto", "Descripción", "Miembros", "Responsables", "Asistentes",
+        "Eventos", "Presentes totales", "Ausentes totales", "% Asistencia"
+    ])
+    _style_header(ws_proj, 1)
+
+    for proj in projects:
+        members = proj.persons
+        responsibles = [p for p in members if p.tipo == "responsable"]
+        assistants = [p for p in members if p.tipo == "asistente"]
+        proj_events = proj.events
+
+        total_present_proj = 0
+        total_expected_proj = 0
+        for ev in proj_events:
+            expected_ev = len(assistants)
+            present_ev = db.query(Attendance).filter(
+                Attendance.event_id == ev.id,
+                Attendance.present == True
+            ).count()
+            total_present_proj += present_ev
+            total_expected_proj += expected_ev
+
+        total_absent_proj = total_expected_proj - total_present_proj
+        pct_proj = round((total_present_proj / total_expected_proj * 100), 1) if total_expected_proj else 0
+
+        ws_proj.append([
+            proj.name,
+            proj.description or "",
+            len(members),
+            ", ".join([f"{r.nombres} {r.apellidos}".strip() for r in responsibles]),
+            len(assistants),
+            len(proj_events),
+            total_present_proj,
+            total_absent_proj if total_absent_proj >= 0 else 0,
+            f"{pct_proj}%"
+        ])
+    _auto_width(ws_proj)
+
+    # ── Hoja 4: Detalle de Asistencia ─────────────────────────────────────────
+    ws_detail = wb.create_sheet("Detalle de Asistencia")
+    ws_detail.append([
+        "Proyecto", "Evento", "Fecha", "Cédula", "Nombres", "Apellidos",
+        "Cargo", "Correo", "Celular", "Estado", "Tiene firma"
+    ])
+    _style_header(ws_detail, 1)
+
+    for ev in events:
+        proj = ev.project
+        assistants = [p for p in (proj.persons if proj else []) if p.tipo == "asistente"]
+        attendance_map = {
+            a.person_id: a for a in db.query(Attendance).filter(Attendance.event_id == ev.id).all()
+        }
+        for p in assistants:
+            att = attendance_map.get(p.id)
+            is_present = att.present if att else False
+            has_signature = bool(att and att.signature) if att else False
+            ws_detail.append([
+                proj.name if proj else "",
+                ev.name,
+                ev.date,
+                p.cedula,
+                p.nombres,
+                p.apellidos,
+                p.cargo,
+                p.correo or "",
+                p.celular or "",
+                "Presente" if is_present else "Ausente",
+                "Sí" if has_signature else "No"
+            ])
+    _auto_width(ws_detail)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+# ── Endpoint: Descargar informe Excel ─────────────────────────────────────────
+@app.get("/api/reports/excel")
+def download_excel_report(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        xlsx = _build_excel_report(db)
+        filename = f"informe_asistencia_meta_tic_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return StreamingResponse(
+            xlsx,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando informe: {str(e)}")
 
 
 # ── Endpoint: Estadísticas simples para dashboard ─────────────────────────────

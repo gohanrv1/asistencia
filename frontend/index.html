@@ -306,6 +306,10 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <div style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById('db-file-input').click()">Seleccionar archivo</button><button class="btn btn-primary" onclick="uploadDB()">Subir y Restaurar</button></div>
         <div id="backup-msg" style="margin-top:10px;color:var(--text2)"></div>
       </div>
+      <div class="card">
+        <div style="margin-bottom:10px"><strong>Informe detallado en Excel</strong><br>Descarga un archivo con resumen general, asistencia por evento, por proyecto y detalle de asistencia.</div>
+        <button class="btn btn-primary" onclick="downloadExcelReport()"><i class="ti ti-file-spreadsheet"></i> Descargar Excel</button>
+      </div>
     </div>
     <div id="view-users" class="view">
       <div class="sh"><span class="st">Gestión de Usuarios</span>
@@ -795,6 +799,15 @@ function downloadDB(){
   a.href = API + '/db/download?token=' + encodeURIComponent(token || '');
   a.download = '';
   document.body.appendChild(a); a.click(); a.remove();
+}
+
+function downloadExcelReport(){
+  const token = localStorage.getItem('token');
+  const a = document.createElement('a');
+  a.href = API + '/reports/excel?token=' + encodeURIComponent(token || '');
+  a.download = '';
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast('Descargando informe Excel...');
 }
 
 async function uploadDB(){
