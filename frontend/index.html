@@ -7,25 +7,27 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <style>
 :root {
-  --bg:#fff; --bg2:#f5f5f3; --bg3:#eeede9;
-  --text:#111110; --text2:#666663;
-  --border:rgba(0,0,0,0.12); --border2:rgba(0,0,0,0.22);
+  --bg:#fff; --bg2:#f5f5f3; --bg3:#eef7f4;
+  --text:#0d2b36; --text2:#4a6b75;
+  --border:rgba(11,140,106,0.15); --border2:rgba(11,140,106,0.28);
   --r:8px; --rl:12px;
-  --purple:#534AB7; --pl:#EEEDFE; --pd:#3C3489;
+  /* META TIC brand palette */
+  --purple:#0C447C; --pl:#E6F1FB; --pd:#0A3A6A;
   --teal:#1D9E75; --tl:#E1F5EE; --td:#085041;
-  --amber:#EF9F27; --al:#FAEEDA; --ad:#633806;
+  --amber:#F5B041; --al:#FFF4E0; --ad:#7A4A0A;
   --red:#E24B4A; --rl2:#FCEBEB; --rd:#791F1F;
-  --green:#639922; --gl:#EAF3DE; --gd:#27500A;
-  --blue-l:#E6F1FB; --blue-d:#0C447C;
+  --green:#4A9B5C; --gl:#D4EDDA; --gd:#27500A;
+  --blue-l:#E0F2F1; --blue-d:#00695C;
   --coral-l:#FAECE7; --coral-d:#712B13;
   --gray-l:#F1EFE8; --gray-d:#5F5E5A;
+  --meta-navy:#0C447C; --meta-teal:#1D9E75; --meta-sun:#F5B041;
 }
 @media(prefers-color-scheme:dark){
   :root{
-    --bg:#1a1a18;--bg2:#242422;--bg3:#2e2e2b;
+    --bg:#0d1f26;--bg2:#142e36;--bg3:#1a3a44;
     --text:#f0efea;--text2:#9a9a95;
     --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.18);
-    --pl:#26215C;--pd:#CECBF6;
+    --pl:#0a2a4a;--pd:#B5D4F4;
     --tl:#04342C;--td:#9FE1CB;
     --al:#412402;--ad:#FAC775;
     --rl2:#501313;--rd:#F7C1C1;
@@ -38,19 +40,21 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;font-size:15px;line-height:1.5;}
 .app{display:flex;flex-direction:column;height:100vh;max-width:860px;margin:0 auto;background:var(--bg);box-shadow:0 0 0 0.5px var(--border);}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:10;}
+.app-header{background:url('assets/meta-bg.png') no-repeat bottom center;background-size:cover;border-bottom:0.5px solid var(--border);position:sticky;top:0;z-index:10;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:rgba(255,255,255,0.82);backdrop-filter:blur(6px);}
 .topbar-left{display:flex;align-items:center;gap:10px;}
-.topbar-title{font-size:16px;font-weight:500;}
-.logo{width:32px;height:32px;background:var(--purple);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;}
+.topbar-title{font-size:18px;font-weight:700;color:var(--meta-navy);letter-spacing:-0.3px;}
+.logo{width:42px;height:42px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;}
+.logo-img{width:46px;height:46px;border-radius:50%;object-fit:cover;box-shadow:0 2px 8px rgba(12,68,124,0.18);}
 .sync-badge{display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 11px;border-radius:20px;border:0.5px solid;cursor:pointer;user-select:none;transition:opacity .15s;}
 .sync-badge:hover{opacity:.8;}
 .s-online{background:var(--gl);color:var(--gd);border-color:var(--green);}
 .s-offline{background:var(--al);color:var(--ad);border-color:var(--amber);}
 .s-syncing{background:var(--pl);color:var(--pd);border-color:var(--purple);}
-.nav{display:flex;border-bottom:0.5px solid var(--border);}
+.nav{display:flex;background:rgba(255,255,255,0.72);backdrop-filter:blur(4px);}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 8px;font-size:11px;color:var(--text2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;}
-.nav-btn:hover{background:var(--bg2);}
-.nav-btn.active{color:var(--purple);border-bottom-color:var(--purple);}
+.nav-btn:hover{background:rgba(255,255,255,0.55);color:var(--meta-navy);}
+.nav-btn.active{color:var(--meta-teal);border-bottom-color:var(--meta-teal);font-weight:600;}
 .nav-btn i{font-size:20px;}
 .content{flex:1;overflow-y:auto;padding:20px;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
@@ -127,20 +131,22 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--bg3);
+  background: url('assets/meta-bg.png') no-repeat center bottom;
+  background-size: cover;
   padding: 20px;
 }
 .login-card {
-  background: var(--bg);
+  background: rgba(255,255,255,0.94);
   padding: 32px;
   border-radius: var(--rl);
-  box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 0 0 0.5px var(--border);
+  box-shadow: 0 12px 40px rgba(12,68,124,0.18), 0 0 0 0.5px var(--border);
   width: 100%;
   max-width: 400px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   animation: fadeUp .3s ease;
+  backdrop-filter: blur(4px);
 }
 .login-header {
   display: flex;
@@ -161,10 +167,18 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
   align-items: center;
   justify-content: center;
 }
+.login-logo-img {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 4px;
+  box-shadow: 0 4px 14px rgba(12,68,124,0.2);
+}
 .login-title {
   font-size: 22px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--meta-navy);
 }
 .login-subtitle {
   font-size: 14px;
@@ -205,7 +219,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
 <div id="login-container">
   <div class="login-card">
     <div class="login-header">
-      <div class="login-logo"><i class="ti ti-clipboard-check"></i></div>
+      <img src="assets/meta-logo.png" alt="Consorcio META TIC" class="login-logo-img">
       <div class="login-title">Control de Asistencia</div>
       <div class="login-subtitle">Inicia sesión para continuar</div>
     </div>
@@ -219,29 +233,31 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
 </div>
 
 <div class="app" id="app-container" style="display:none">
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="logo"><i class="ti ti-clipboard-check"></i></div>
-      <span class="topbar-title">Asistencia</span>
-    </div>
-    <div style="display:flex; align-items:center;">
-      <span id="userSessionBadge" style="font-size:12px; color:var(--text2); margin-right:12px; font-weight:600;"></span>
-      <div id="syncBadge" class="sync-badge s-online" onclick="toggleOnline()" title="Toca para simular modo offline">
-        <i class="ti ti-wifi"></i><span>En línea</span>
+  <div class="app-header">
+    <div class="topbar">
+      <div class="topbar-left">
+        <img src="assets/meta-logo.png" alt="Consorcio META TIC" class="logo-img">
+        <span class="topbar-title">Asistencia</span>
       </div>
-      <button class="btn btn-sm" onclick="performLogout()" style="margin-left: 8px; background: none; border: none; padding: 4px 8px; color: var(--red); cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight:600;" title="Cerrar sesión">
-        <i class="ti ti-logout" style="font-size: 16px;"></i>Salir
-      </button>
+      <div style="display:flex; align-items:center;">
+        <span id="userSessionBadge" style="font-size:12px; color:var(--text2); margin-right:12px; font-weight:600;"></span>
+        <div id="syncBadge" class="sync-badge s-online" onclick="toggleOnline()" title="Toca para simular modo offline">
+          <i class="ti ti-wifi"></i><span>En línea</span>
+        </div>
+        <button class="btn btn-sm" onclick="performLogout()" style="margin-left: 8px; background: rgba(255,255,255,0.7); border: none; padding: 4px 8px; color: var(--red); cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight:600; border-radius:20px;" title="Cerrar sesión">
+          <i class="ti ti-logout" style="font-size: 16px;"></i>Salir
+        </button>
+      </div>
     </div>
+    <nav class="nav">
+      <button class="nav-btn active" onclick="showTab('projects')" id="tab-projects"><i class="ti ti-folder"></i>Proyectos</button>
+      <button class="nav-btn" onclick="showTab('events')" id="tab-events"><i class="ti ti-calendar-event"></i>Eventos</button>
+      <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard"><i class="ti ti-chart-pie"></i>Dashboard</button>
+      <button class="nav-btn" onclick="showTab('backup')" id="tab-backup"><i class="ti ti-database"></i>Backup</button>
+      <button class="nav-btn" onclick="showTab('pending')" id="tab-pending"><i class="ti ti-cloud-upload"></i>Pendientes</button>
+      <button class="nav-btn" onclick="showTab('users')" id="tab-users" style="display:none;"><i class="ti ti-users"></i>Usuarios</button>
+    </nav>
   </div>
-  <nav class="nav">
-    <button class="nav-btn active" onclick="showTab('projects')" id="tab-projects"><i class="ti ti-folder"></i>Proyectos</button>
-    <button class="nav-btn" onclick="showTab('events')" id="tab-events"><i class="ti ti-calendar-event"></i>Eventos</button>
-    <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard"><i class="ti ti-chart-pie"></i>Dashboard</button>
-    <button class="nav-btn" onclick="showTab('backup')" id="tab-backup"><i class="ti ti-database"></i>Backup</button>
-    <button class="nav-btn" onclick="showTab('pending')" id="tab-pending"><i class="ti ti-cloud-upload"></i>Pendientes</button>
-    <button class="nav-btn" onclick="showTab('users')" id="tab-users" style="display:none;"><i class="ti ti-users"></i>Usuarios</button>
-  </nav>
   <div class="content">
     <div id="view-projects" class="view active">
       <div class="sh"><span class="st">Proyectos</span>
