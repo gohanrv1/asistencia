@@ -289,7 +289,10 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <div id="pending-list"></div>
     </div>
     <div id="view-dashboard" class="view">
-      <div class="sh"><span class="st">Dashboard</span></div>
+      <div class="sh">
+        <span class="st">Dashboard</span>
+        <button class="btn btn-primary" onclick="downloadExcelReport()"><i class="ti ti-file-spreadsheet"></i> Descargar Excel</button>
+      </div>
       <div id="dashboard-content">
         <div class="loading"><i class="ti ti-chart-pie"></i> Cargando estadísticas...</div>
       </div>
@@ -305,10 +308,6 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <input type="file" id="db-file-input" accept=".db" style="margin-bottom:8px">
         <div style="display:flex;gap:8px"><button class="btn" onclick="document.getElementById('db-file-input').click()">Seleccionar archivo</button><button class="btn btn-primary" onclick="uploadDB()">Subir y Restaurar</button></div>
         <div id="backup-msg" style="margin-top:10px;color:var(--text2)"></div>
-      </div>
-      <div class="card">
-        <div style="margin-bottom:10px"><strong>Informe detallado en Excel</strong><br>Descarga un archivo con resumen general, asistencia por evento, por proyecto y detalle de asistencia.</div>
-        <button class="btn btn-primary" onclick="downloadExcelReport()"><i class="ti ti-file-spreadsheet"></i> Descargar Excel</button>
       </div>
     </div>
     <div id="view-users" class="view">
