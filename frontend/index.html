@@ -251,6 +251,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
     </div>
     <nav class="nav">
       <button class="nav-btn active" onclick="showTab('projects')" id="tab-projects"><i class="ti ti-folder"></i>Proyectos</button>
+      <button class="nav-btn" onclick="showTab('groups')" id="tab-groups"><i class="ti ti-users-group"></i>Grupos</button>
       <button class="nav-btn" onclick="showTab('events')" id="tab-events"><i class="ti ti-calendar-event"></i>Eventos</button>
       <button class="nav-btn" onclick="showTab('dashboard')" id="tab-dashboard"><i class="ti ti-chart-pie"></i>Dashboard</button>
       <button class="nav-btn" onclick="showTab('backup')" id="tab-backup"><i class="ti ti-database"></i>Backup</button>
@@ -296,6 +297,15 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <div id="dashboard-content">
         <div class="loading"><i class="ti ti-chart-pie"></i> Cargando estadísticas...</div>
       </div>
+    </div>
+    <div id="view-groups" class="view">
+      <div class="sh"><span class="st">Grupos de asistentes</span>
+        <button class="btn btn-primary btn-sm" onclick="openModal('newGroup')"><i class="ti ti-plus"></i>Nuevo grupo</button>
+      </div>
+      <div class="search-bar"><i class="ti ti-search"></i>
+        <input type="text" id="search-groups" placeholder="Buscar grupos..." oninput="renderGroups()">
+      </div>
+      <div id="groups-list"></div>
     </div>
     <div id="view-backup" class="view">
       <div class="sh"><span class="st">Backup / Restaurar</span></div>
@@ -407,16 +417,36 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
     </div>
   </div>
   <div id="modal-newEvent" class="overlay" style="display:none">
-    <div class="modal">
+    <div class="modal" style="max-width: 520px;">
       <div class="modal-title">Nuevo evento</div>
       <label>Nombre</label><input type="text" id="ev-name" placeholder="Ej: Sesión #3, Reunión mensual">
       <label>Proyecto</label><select id="ev-project"></select>
       <label>Fecha</label><input type="date" id="ev-date">
       <label>Responsable (persona)</label><select id="ev-responsible"></select>
+      <label>Grupos de asistentes (opcional)</label>
+      <div id="ev-groups" style="max-height:160px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px;background:var(--bg2);"></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Al crear el evento se precargarán todos los asistentes de los grupos seleccionados.</div>
       <label>Notas (opcional)</label><input type="text" id="ev-notes" placeholder="Observaciones">
       <div class="modal-actions">
         <button class="btn" onclick="closeModal()">Cancelar</button>
         <button class="btn btn-primary" onclick="createNewEvent()">Crear</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-newGroup" class="overlay" style="display:none">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-title" id="group-modal-title">Nuevo grupo</div>
+      <input type="hidden" id="group-id">
+      <label>Nombre del grupo</label><input type="text" id="group-name" placeholder="Ej: Equipo de campo, Capacitación julio">
+      <label>Descripción (opcional)</label><input type="text" id="group-desc" placeholder="Observaciones">
+      <label>Personas del grupo</label>
+      <div class="search-bar" style="margin-bottom:8px;"><i class="ti ti-search"></i>
+        <input type="text" id="group-person-search" placeholder="Buscar personas..." oninput="renderGroupPersonSelector()">
+      </div>
+      <div id="group-persons" style="max-height:220px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;background:var(--bg2);"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveGroup()">Guardar</button>
       </div>
     </div>
   </div>
@@ -472,7 +502,7 @@ const initials = n => n.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().
 const fmtDate = d => { try { return new Date(d+'T12:00:00').toLocaleDateString('es-CO',{weekday:'short',year:'numeric',month:'short',day:'numeric'}); } catch(e){return d;} };
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
-let cache = { projects:[], persons:[], events:[], attendance:{}, project_persons:[] };
+let cache = { projects:[], persons:[], events:[], attendance:{}, project_persons:[], groups:[], group_persons:[] };
 let pendingSync = [];   // cambios offline pendientes
 let online = true;
 let currentProject = null;
@@ -548,16 +578,20 @@ async function apiFetch(method, path, body) {
 
 // ─── Sincronización con servidor ─────────────────────────────────────────────
 async function fetchAll() {
-  const [projects, events, persons, projectPersons] = await Promise.all([
+  const [projects, events, persons, projectPersons, groups, groupPersons] = await Promise.all([
     apiFetch('GET','/projects'),
     apiFetch('GET','/events'),
     apiFetch('GET','/persons'),
     apiFetch('GET','/project-persons'),
+    apiFetch('GET','/groups').catch(() => []),
+    apiFetch('GET','/group-persons').catch(() => []),
   ]);
   cache.projects = projects;
   cache.events = events;
   cache.persons = persons;
   cache.project_persons = projectPersons || [];
+  cache.groups = groups || [];
+  cache.group_persons = groupPersons || [];
   saveLocal();
 }
 
@@ -577,13 +611,16 @@ async function autoSync() {
     }
 
     // Construir payload
-    const payload = { projects:[], persons:[], events:[], attendance:{}, assignments:[], unassignments:[] };
+    const payload = { projects:[], persons:[], events:[], attendance:{}, assignments:[], unassignments:[], groups:[], group_assignments:[], group_unassignments:[] };
     for(const op of pendingSync) {
       if(op.type==='project')       payload.projects.push(op.data);
       if(op.type==='person')        payload.persons.push(op.data);
       if(op.type==='event')         payload.events.push(op.data);
       if(op.type==='assign')        payload.assignments.push(op.data);
       if(op.type==='unassign')      payload.unassignments.push(op.data);
+      if(op.type==='group')         payload.groups.push(op.data);
+      if(op.type==='group_assign')  payload.group_assignments.push(op.data);
+      if(op.type==='group_unassign')payload.group_unassignments.push(op.data);
       if(op.type==='attendance'){
         const {event_id, person_id, present} = op.data;
         if(!payload.attendance[event_id]) payload.attendance[event_id]={};
@@ -627,6 +664,7 @@ function showTab(tab) {
   document.getElementById('tab-'+tab).classList.add('active');
   document.getElementById('view-'+tab).classList.add('active');
   if(tab==='projects') renderProjects();
+  else if(tab==='groups') renderGroups();
   else if(tab==='events') renderAllEvents();
   else if(tab==='pending') renderPending();
   else if(tab==='dashboard') loadDashboard();
@@ -654,6 +692,15 @@ function openModal(name) {
       resp.innerHTML = '<option value="">Sin responsable</option>' +
         responsables.map(p=>`<option value="${p.id}">${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
     }
+    renderEventGroupSelector();
+  }
+  if(name==='newGroup') {
+    document.getElementById('group-modal-title').textContent = 'Nuevo grupo';
+    document.getElementById('group-id').value = '';
+    document.getElementById('group-name').value = '';
+    document.getElementById('group-desc').value = '';
+    document.getElementById('group-person-search').value = '';
+    renderGroupPersonSelector();
   }
   setTimeout(()=>{ const f=document.querySelector(`#modal-${name} input`); if(f)f.focus(); },50);
 }
@@ -662,7 +709,8 @@ function closeModal() {
   document.querySelectorAll('.overlay').forEach(m=>m.style.display='none');
   [
     'np-name','np-desc','person-name','person-role','ev-name','ev-notes',
-    'person-nombres', 'person-apellidos', 'person-cedula', 'person-cargo', 'person-correo', 'person-celular', 'person-csv-file'
+    'person-nombres', 'person-apellidos', 'person-cedula', 'person-cargo', 'person-correo', 'person-celular', 'person-csv-file',
+    'group-name', 'group-desc', 'group-person-search'
   ].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
   const tipoEl = document.getElementById('person-tipo');
   if(tipoEl) tipoEl.value = 'asistente';
@@ -1009,6 +1057,9 @@ async function createNewEvent() {
   // include responsible if selected
   const respEl = document.getElementById('ev-responsible');
   if(respEl && respEl.value) data.responsible_id = respEl.value;
+  // grupos seleccionados
+  const groupIds = Array.from(document.querySelectorAll('#ev-groups input[type="checkbox"]:checked')).map(cb => cb.value);
+  if(groupIds.length) data.group_ids = groupIds;
   if(online) {
     try { const ev=await apiFetch('POST','/events',data); cache.events.unshift(ev); saveLocal(); }
     catch(e){ showToast('Error: '+e.message); return; }
@@ -1020,6 +1071,162 @@ async function createNewEvent() {
   if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
   else renderAllEvents();
   showToast(`Evento "${name}" creado`);
+}
+
+function renderEventGroupSelector() {
+  const container = document.getElementById('ev-groups');
+  if(!container) return;
+  if(!cache.groups || !cache.groups.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:4px;">No hay grupos creados. Crea grupos en la pestaña Grupos.</div>';
+    return;
+  }
+  container.innerHTML = cache.groups.map(g => {
+    const count = (cache.group_persons || []).filter(gp => gp.group_id === g.id).length;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;font-size:14px;">
+      <input type="checkbox" value="${g.id}">
+      <span><strong>${g.name}</strong> <span style="color:var(--text2);font-size:12px;">(${count} persona${count!==1?'s':''})</span></span>
+    </label>`;
+  }).join('');
+}
+
+function renderGroupPersonSelector() {
+  const container = document.getElementById('group-persons');
+  if(!container) return;
+  const groupId = document.getElementById('group-id').value;
+  const selectedIds = new Set((cache.group_persons || [])
+    .filter(gp => gp.group_id === groupId)
+    .map(gp => gp.person_id));
+  const q = (document.getElementById('group-person-search')?.value || '').toLowerCase();
+  let persons = cache.persons.filter(p => (p.tipo || 'asistente') === 'asistente');
+  if(q) persons = persons.filter(p => {
+    const full = `${p.nombres||p.name||''} ${p.apellidos||''} ${p.cedula||''} ${p.cargo||p.role||''}`.toLowerCase();
+    return full.includes(q);
+  });
+  if(!persons.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px;text-align:center;">No hay personas disponibles.</div>';
+    return;
+  }
+  container.innerHTML = persons.map(p => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:14px;border-bottom:0.5px solid var(--border);">
+      <input type="checkbox" value="${p.id}" ${selectedIds.has(p.id)?'checked':''}>
+      <span>${p.nombres||p.name||''} ${p.apellidos||''} <span style="color:var(--text2);font-size:12px;">· ${p.cedula||'Sin ID'} · ${p.cargo||p.role||'Sin cargo'}</span></span>
+    </label>
+  `).join('');
+}
+
+async function saveGroup() {
+  const id = document.getElementById('group-id').value;
+  const name = document.getElementById('group-name').value.trim();
+  const description = document.getElementById('group-desc').value.trim();
+  if(!name) { showToast('El nombre del grupo es obligatorio'); return; }
+  const selectedIds = Array.from(document.querySelectorAll('#group-persons input[type="checkbox"]:checked')).map(cb => cb.value);
+
+  if(online) {
+    try {
+      let group;
+      if(id) {
+        group = await apiFetch('PUT', `/groups/${id}`, { name, description });
+      } else {
+        group = await apiFetch('POST', '/groups', { id: uid(), name, description });
+        cache.groups.unshift(group);
+      }
+      // Sincronizar personas del grupo
+      const currentIds = new Set((cache.group_persons || []).filter(gp => gp.group_id === group.id).map(gp => gp.person_id));
+      for(const pid of selectedIds) {
+        if(!currentIds.has(pid)) {
+          await apiFetch('POST', `/groups/${group.id}/persons/${pid}`);
+          cache.group_persons.push({ group_id: group.id, person_id: pid });
+        }
+      }
+      for(const pid of currentIds) {
+        if(!selectedIds.includes(pid)) {
+          await apiFetch('DELETE', `/groups/${group.id}/persons/${pid}`);
+          cache.group_persons = cache.group_persons.filter(gp => !(gp.group_id === group.id && gp.person_id === pid));
+        }
+      }
+      // Actualizar grupo en cache
+      const idx = cache.groups.findIndex(g => g.id === group.id);
+      if(idx >= 0) { cache.groups[idx].name = group.name; cache.groups[idx].description = group.description; }
+      saveLocal();
+    } catch(e) { showToast('Error: '+e.message); return; }
+  } else {
+    const groupId = id || uid();
+    if(!id) {
+      cache.groups.unshift({ id: groupId, name, description, created_at: new Date().toISOString(), person_ids: [] });
+      pendingSync.push({ type: 'group', data: { id: groupId, name, description } });
+    }
+    const currentIds = new Set((cache.group_persons || []).filter(gp => gp.group_id === groupId).map(gp => gp.person_id));
+    for(const pid of selectedIds) {
+      if(!currentIds.has(pid)) {
+        cache.group_persons.push({ group_id: groupId, person_id: pid });
+        pendingSync.push({ type: 'group_assign', data: { group_id: groupId, person_id: pid } });
+      }
+    }
+    for(const pid of currentIds) {
+      if(!selectedIds.includes(pid)) {
+        cache.group_persons = cache.group_persons.filter(gp => !(gp.group_id === groupId && gp.person_id === pid));
+        pendingSync.push({ type: 'group_unassign', data: { group_id: groupId, person_id: pid } });
+      }
+    }
+    saveLocal(); updatePendingTab();
+  }
+  closeModal(); renderGroups(); showToast('Grupo guardado');
+}
+
+async function deleteGroup(id) {
+  const g = cache.groups.find(x => x.id === id);
+  if(!confirm(`¿Eliminar el grupo "${g?.name}"?`)) return;
+  if(online) {
+    try { await apiFetch('DELETE', `/groups/${id}`); }
+    catch(e){ showToast('Error: '+e.message); return; }
+  } else {
+    pendingSync.push({ type: 'delete_group', data: { id } });
+    updatePendingTab();
+  }
+  cache.groups = cache.groups.filter(x => x.id !== id);
+  cache.group_persons = (cache.group_persons || []).filter(gp => gp.group_id !== id);
+  saveLocal(); renderGroups(); showToast('Grupo eliminado');
+}
+
+function editGroup(id) {
+  const g = cache.groups.find(x => x.id === id);
+  if(!g) return;
+  document.getElementById('group-modal-title').textContent = 'Editar grupo';
+  document.getElementById('group-id').value = g.id;
+  document.getElementById('group-name').value = g.name || '';
+  document.getElementById('group-desc').value = g.description || '';
+  document.getElementById('group-person-search').value = '';
+  renderGroupPersonSelector();
+  openModal('newGroup');
+}
+
+function renderGroups() {
+  const q = (document.getElementById('search-groups')?.value || '').toLowerCase();
+  const list = document.getElementById('groups-list');
+  let groups = cache.groups || [];
+  if(q) groups = groups.filter(g => (g.name||'').toLowerCase().includes(q) || (g.description||'').toLowerCase().includes(q));
+  if(!groups.length) {
+    list.innerHTML = `<div class="empty"><i class="ti ti-users-group"></i><p>${q?'Sin resultados.':'No hay grupos aún.<br>Crea el primero para agrupar asistentes.'}</p></div>`;
+    return;
+  }
+  list.innerHTML = groups.map(g => {
+    const memberIds = (cache.group_persons || []).filter(gp => gp.group_id === g.id).map(gp => gp.person_id);
+    const members = cache.persons.filter(p => memberIds.includes(p.id));
+    const names = members.slice(0, 4).map(p => `${p.nombres||p.name||''} ${p.apellidos||''}`.trim()).join(', ') + (members.length > 4 ? ` y ${members.length - 4} más` : '');
+    return `<div class="card">
+      <div class="card-row" style="align-items:flex-start;">
+        <div style="min-width:0;flex:1">
+          <div class="card-title">${g.name}</div>
+          <div class="card-sub">${g.description || 'Sin descripción'}</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:6px;"><i class="ti ti-users"></i> ${members.length} persona${members.length!==1?'s':''}${names ? ': ' + names : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
+          <button class="btn btn-sm" onclick="editGroup('${g.id}')"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deleteGroup('${g.id}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 async function deleteEvent(id) {
@@ -1346,7 +1553,7 @@ function renderAttendance() {
 function renderPending() {
   const list=document.getElementById('pending-list');
   if(!pendingSync.length) { list.innerHTML=`<div class="empty"><i class="ti ti-cloud-check"></i><p>Todo está sincronizado.</p></div>`; return; }
-  const labels={ project:'Proyecto creado', person:'Persona creada', event:'Evento creado', attendance:'Asistencia actualizada', assign:'Persona asignada', unassign:'Persona desasignada' };
+  const labels={ project:'Proyecto creado', person:'Persona creada', event:'Evento creado', attendance:'Asistencia actualizada', assign:'Persona asignada', unassign:'Persona desasignada', group:'Grupo creado', group_assign:'Persona agregada a grupo', group_unassign:'Persona removida de grupo', delete_group:'Grupo eliminado' };
   list.innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:14px">${pendingSync.length} cambio${pendingSync.length!==1?'s':''} pendiente${pendingSync.length!==1?'s':''}. Activa internet y pulsa "Sincronizar ahora".</div>`
     +pendingSync.map(s=>`
       <div class="card">

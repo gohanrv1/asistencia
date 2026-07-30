@@ -41,6 +41,14 @@ project_person = Table(
     Column("person_id", String, ForeignKey("persons.id", ondelete="CASCADE"), primary_key=True)
 )
 
+# Tabla asociativa muchos a muchos para Grupos y Personas
+group_person = Table(
+    "group_person",
+    Base.metadata,
+    Column("group_id", String, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", String, ForeignKey("persons.id", ondelete="CASCADE"), primary_key=True)
+)
+
 # ── Modelos ORM ───────────────────────────────────────────────────────────────
 class Project(Base):
     __tablename__ = "projects"
@@ -50,6 +58,14 @@ class Project(Base):
     created_at  = Column(DateTime, default=datetime.utcnow)
     persons     = relationship("Person", secondary=project_person, back_populates="projects")
     events      = relationship("Event",  back_populates="project", cascade="all, delete-orphan")
+
+class Group(Base):
+    __tablename__ = "groups"
+    id          = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name        = Column(String, nullable=False)
+    description = Column(Text, default="")
+    created_at  = Column(DateTime, default=datetime.utcnow)
+    persons     = relationship("Person", secondary=group_person, back_populates="groups")
 
 class Person(Base):
     __tablename__ = "persons"
@@ -62,6 +78,7 @@ class Person(Base):
     correo     = Column(String, default="")
     celular    = Column(String, default="")
     projects   = relationship("Project", secondary=project_person, back_populates="persons")
+    groups     = relationship("Group", secondary=group_person, back_populates="persons")
 
 class Event(Base):
     __tablename__ = "events"
@@ -353,6 +370,7 @@ class EventCreate(BaseModel):
     notes: Optional[str] = ""
     project_id: str
     responsible_id: Optional[str] = None
+    group_ids: Optional[List[str]] = []
 
 class EventOut(BaseModel):
     id: str
@@ -376,6 +394,30 @@ class ProjectPersonSync(BaseModel):
     project_id: str
     person_id: str
 
+class GroupPersonSync(BaseModel):
+    group_id: str
+    person_id: str
+
+class GroupCreate(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+
+class GroupOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+    class Config: from_attributes = True
+
+class GroupWithPersonsOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+    person_ids: List[str]
+    class Config: from_attributes = True
+
 class SyncPayload(BaseModel):
     """Payload de sincronización offline → servidor"""
     projects:      List[ProjectCreate]      = []
@@ -384,6 +426,9 @@ class SyncPayload(BaseModel):
     attendance:    dict                     = {}   # { event_id: { person_id: bool } }
     assignments:   List[ProjectPersonSync]  = []
     unassignments: List[ProjectPersonSync]  = []
+    groups:        List[GroupCreate]        = []
+    group_assignments:   List[GroupPersonSync] = []
+    group_unassignments: List[GroupPersonSync] = []
 
 from datetime import timedelta
 
@@ -576,6 +621,64 @@ def list_project_persons(current_user: User = Depends(get_current_user), db: Ses
     associations = db.query(project_person).all()
     return [{"project_id": a.project_id, "person_id": a.person_id} for a in associations]
 
+# ── Endpoints: Grupos ─────────────────────────────────────────────────────────
+@app.get("/api/groups", response_model=List[GroupWithPersonsOut])
+def list_groups(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    groups = db.query(Group).order_by(Group.created_at.desc()).all()
+    return [{"id": g.id, "name": g.name, "description": g.description or "", "created_at": g.created_at, "person_ids": [p.id for p in g.persons]} for g in groups]
+
+@app.post("/api/groups", response_model=GroupOut, status_code=201)
+def create_group(data: GroupCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = Group(id=data.id or str(uuid.uuid4()), name=data.name, description=data.description or "")
+    db.add(group); db.commit(); db.refresh(group)
+    return group
+
+@app.get("/api/groups/{group_id}", response_model=GroupWithPersonsOut)
+def get_group(group_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group: raise HTTPException(404, "Grupo no encontrado")
+    return {"id": group.id, "name": group.name, "description": group.description or "", "created_at": group.created_at, "person_ids": [p.id for p in group.persons]}
+
+@app.put("/api/groups/{group_id}", response_model=GroupOut)
+def update_group(group_id: str, data: GroupCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group: raise HTTPException(404, "Grupo no encontrado")
+    group.name = data.name; group.description = data.description or ""
+    db.commit(); db.refresh(group)
+    return group
+
+@app.delete("/api/groups/{group_id}", status_code=204)
+def delete_group(group_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group: raise HTTPException(404, "Grupo no encontrado")
+    db.delete(group); db.commit()
+
+@app.post("/api/groups/{group_id}/persons/{person_id}", status_code=200)
+def assign_person_to_group(group_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    person = db.query(Person).filter(Person.id == person_id).first()
+    if not group or not person:
+        raise HTTPException(404, "Grupo o persona no encontrado")
+    if person not in group.persons:
+        group.persons.append(person)
+        db.commit()
+    return {"ok": True}
+
+@app.delete("/api/groups/{group_id}/persons/{person_id}", status_code=204)
+def unassign_person_from_group(group_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    person = db.query(Person).filter(Person.id == person_id).first()
+    if not group or not person:
+        raise HTTPException(404, "Grupo o persona no encontrado")
+    if person in group.persons:
+        group.persons.remove(person)
+        db.commit()
+
+@app.get("/api/group-persons")
+def list_group_persons(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    associations = db.query(group_person).all()
+    return [{"group_id": a.group_id, "person_id": a.person_id} for a in associations]
+
 @app.get("/api/persons/template")
 def download_csv_template(current_user: User = Depends(get_current_user)):
     csv_content = "nombres,apellidos,cedula,cargo,tipo,correo,celular\nJuan,Perez,12345678,Gerente,asistente,juan@example.com,555-1234\nMaria,Gomez,87654321,Analista,responsable,,555-5678\n"
@@ -654,6 +757,24 @@ def create_event(data: EventCreate, current_user: User = Depends(get_current_use
         raise HTTPException(404, "Proyecto no encontrado")
     ev = Event(id=data.id or str(uuid.uuid4()), name=data.name, date=data.date, notes=data.notes or "", project_id=data.project_id, responsible_id=data.responsible_id)
     db.add(ev); db.commit(); db.refresh(ev)
+
+    # Precargar asistencia con personas de los grupos seleccionados
+    group_ids = data.group_ids or []
+    if group_ids:
+        seen = set()
+        for gid in group_ids:
+            group = db.query(Group).filter(Group.id == gid).first()
+            if group:
+                for person in group.persons:
+                    if person.id not in seen and (person.tipo or "asistente") == "asistente":
+                        seen.add(person.id)
+                        existing = db.query(Attendance).filter(
+                            Attendance.event_id == ev.id,
+                            Attendance.person_id == person.id
+                        ).first()
+                        if not existing:
+                            db.add(Attendance(event_id=ev.id, person_id=person.id, present=False, signature=""))
+        db.commit(); db.refresh(ev)
     return ev
 
 @app.delete("/api/events/{event_id}", status_code=204)
@@ -698,7 +819,7 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     y los aplica en orden: proyectos → personas → eventos → asistencia.
     Usa upsert (insertar si no existe, ignorar si ya existe).
     """
-    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "assignments": 0, "unassignments": 0}
+    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "assignments": 0, "unassignments": 0, "groups": 0, "group_assignments": 0, "group_unassignments": 0}
 
     for p in payload.projects:
         if not db.query(Project).filter(Project.id == p.id).first():
@@ -736,8 +857,44 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     for e in payload.events:
         if not db.query(Event).filter(Event.id == e.id).first():
             if db.query(Project).filter(Project.id == e.project_id).first():
-                db.add(Event(id=e.id, name=e.name, date=e.date, notes=e.notes or "", project_id=e.project_id))
+                db.add(Event(id=e.id, name=e.name, date=e.date, notes=e.notes or "", project_id=e.project_id, responsible_id=e.responsible_id))
                 synced["events"] += 1
+                # Precargar asistencia desde grupos si vienen group_ids
+                if e.group_ids:
+                    for gid in e.group_ids:
+                        group = db.query(Group).filter(Group.id == gid).first()
+                        if group:
+                            for person in group.persons:
+                                if (person.tipo or "asistente") == "asistente":
+                                    existing = db.query(Attendance).filter(
+                                        Attendance.event_id == e.id,
+                                        Attendance.person_id == person.id
+                                    ).first()
+                                    if not existing:
+                                        db.add(Attendance(event_id=e.id, person_id=person.id, present=False, signature=""))
+
+    db.flush()
+
+    for g in payload.groups:
+        if not db.query(Group).filter(Group.id == g.id).first():
+            db.add(Group(id=g.id, name=g.name, description=g.description or ""))
+            synced["groups"] = synced.get("groups", 0) + 1
+
+    db.flush()
+
+    for assoc in payload.group_assignments:
+        group = db.query(Group).filter(Group.id == assoc.group_id).first()
+        person = db.query(Person).filter(Person.id == assoc.person_id).first()
+        if group and person and person not in group.persons:
+            group.persons.append(person)
+            synced["group_assignments"] = synced.get("group_assignments", 0) + 1
+
+    for assoc in payload.group_unassignments:
+        group = db.query(Group).filter(Group.id == assoc.group_id).first()
+        person = db.query(Person).filter(Person.id == assoc.person_id).first()
+        if group and person and person in group.persons:
+            group.persons.remove(person)
+            synced["group_unassignments"] = synced.get("group_unassignments", 0) + 1
 
     db.flush()
 
@@ -961,6 +1118,22 @@ def _build_excel_report(db: Session) -> io.BytesIO:
                 "Sí" if has_signature else "No"
             ])
     _auto_width(ws_detail)
+
+    # ── Hoja 5: Grupos ────────────────────────────────────────────────────────
+    ws_groups = wb.create_sheet("Grupos")
+    ws_groups.append(["Grupo", "Descripción", "Total personas", "Cédulas", "Nombres"])
+    _style_header(ws_groups, 1)
+    all_groups = db.query(Group).order_by(Group.name).all()
+    for g in all_groups:
+        members = g.persons
+        ws_groups.append([
+            g.name,
+            g.description or "",
+            len(members),
+            ", ".join([p.cedula for p in members]),
+            ", ".join([f"{p.nombres} {p.apellidos}".strip() for p in members])
+        ])
+    _auto_width(ws_groups)
 
     output = io.BytesIO()
     wb.save(output)
