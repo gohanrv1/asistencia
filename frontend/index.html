@@ -418,7 +418,8 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
   </div>
   <div id="modal-newEvent" class="overlay" style="display:none">
     <div class="modal" style="max-width: 520px;">
-      <div class="modal-title">Nuevo evento</div>
+      <div class="modal-title" id="ev-modal-title">Nuevo evento</div>
+      <input type="hidden" id="ev-id">
       <label>Nombre</label><input type="text" id="ev-name" placeholder="Ej: Sesión #3, Reunión mensual">
       <label>Proyecto</label><select id="ev-project"></select>
       <label>Fecha</label><input type="date" id="ev-date">
@@ -429,7 +430,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <label>Notas (opcional)</label><input type="text" id="ev-notes" placeholder="Observaciones">
       <div class="modal-actions">
         <button class="btn" onclick="closeModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="createNewEvent()">Crear</button>
+        <button class="btn btn-primary" onclick="saveEvent()">Guardar</button>
       </div>
     </div>
   </div>
@@ -458,6 +459,19 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <button class="btn" onclick="clearSignature()">Borrar</button>
         <button class="btn" onclick="cancelSignature()">Cancelar</button>
         <button class="btn btn-primary" onclick="saveSignature()">Guardar firma</button>
+      </div>
+    </div>
+  </div>
+  <div id="modal-eventAttendees" class="overlay" style="display:none">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-title">Gestionar asistentes del evento</div>
+      <div class="search-bar" style="margin-bottom:8px;"><i class="ti ti-search"></i>
+        <input type="text" id="event-att-search" placeholder="Buscar personas..." oninput="renderEventAttendeeSelector()">
+      </div>
+      <div id="event-att-list" style="max-height:260px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px;background:var(--bg2);"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-primary" onclick="saveEventAttendees()">Guardar cambios</button>
       </div>
     </div>
   </div>
@@ -681,17 +695,15 @@ function openModal(name) {
   document.getElementById('modal-overlay').style.display='flex';
   document.getElementById('modal-'+name).style.display='flex';
   if(name==='newEvent') {
+    document.getElementById('ev-modal-title').textContent = 'Nuevo evento';
+    document.getElementById('ev-id').value = '';
+    document.getElementById('ev-name').value = '';
+    document.getElementById('ev-notes').value = '';
     const sel=document.getElementById('ev-project');
     sel.innerHTML=cache.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     if(currentProject) sel.value=currentProject.id;
     document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
-    // populate responsible select with responsables only
-    const resp = document.getElementById('ev-responsible');
-    if(resp) {
-      const responsables = cache.persons.filter(p => p.tipo === 'responsable');
-      resp.innerHTML = '<option value="">Sin responsable</option>' +
-        responsables.map(p=>`<option value="${p.id}">${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
-    }
+    populateResponsibleSelect('');
     renderEventGroupSelector();
   }
   if(name==='newGroup') {
@@ -710,7 +722,7 @@ function closeModal() {
   [
     'np-name','np-desc','person-name','person-role','ev-name','ev-notes',
     'person-nombres', 'person-apellidos', 'person-cedula', 'person-cargo', 'person-correo', 'person-celular', 'person-csv-file',
-    'group-name', 'group-desc', 'group-person-search'
+    'group-name', 'group-desc', 'group-person-search', 'ev-name', 'ev-notes'
   ].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
   const tipoEl = document.getElementById('person-tipo');
   if(tipoEl) tipoEl.value = 'asistente';
@@ -1048,29 +1060,71 @@ async function uploadCsvFile() {
   }
 }
 
-async function createNewEvent() {
-  const name=document.getElementById('ev-name').value.trim();
-  const project_id=document.getElementById('ev-project').value;
-  const date=document.getElementById('ev-date').value;
-  if(!name||!project_id) return;
-  const data={ id:uid(), name, project_id, date, notes:document.getElementById('ev-notes').value.trim() };
-  // include responsible if selected
+function populateResponsibleSelect(selectedId) {
+  const resp = document.getElementById('ev-responsible');
+  if(!resp) return;
+  const responsables = cache.persons.filter(p => p.tipo === 'responsable');
+  resp.innerHTML = '<option value="">Sin responsable</option>' +
+    responsables.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${(p.nombres||p.name||'').trim()} ${(p.apellidos||'').trim()}</option>`).join('');
+}
+
+function openEditEventModal(eventId) {
+  const ev = cache.events.find(e => e.id === eventId);
+  if(!ev) return;
+  document.getElementById('ev-modal-title').textContent = 'Editar evento';
+  document.getElementById('ev-id').value = ev.id;
+  document.getElementById('ev-name').value = ev.name || '';
+  const sel = document.getElementById('ev-project');
+  sel.innerHTML = cache.projects.map(p=>`<option value="${p.id}" ${p.id===ev.project_id?'selected':''}>${p.name}</option>`).join('');
+  document.getElementById('ev-date').value = ev.date || '';
+  populateResponsibleSelect(ev.responsible_id || '');
+  renderEventGroupSelector();
+  document.getElementById('ev-notes').value = ev.notes || '';
+  openModal('newEvent');
+}
+
+async function saveEvent() {
+  const id = document.getElementById('ev-id').value;
+  const name = document.getElementById('ev-name').value.trim();
+  const project_id = document.getElementById('ev-project').value;
+  const date = document.getElementById('ev-date').value;
+  if(!name || !project_id || !date) { showToast('Nombre, proyecto y fecha son obligatorios'); return; }
+  const data = { name, project_id, date, notes: document.getElementById('ev-notes').value.trim() };
   const respEl = document.getElementById('ev-responsible');
   if(respEl && respEl.value) data.responsible_id = respEl.value;
-  // grupos seleccionados
   const groupIds = Array.from(document.querySelectorAll('#ev-groups input[type="checkbox"]:checked')).map(cb => cb.value);
   if(groupIds.length) data.group_ids = groupIds;
-  if(online) {
-    try { const ev=await apiFetch('POST','/events',data); cache.events.unshift(ev); saveLocal(); }
-    catch(e){ showToast('Error: '+e.message); return; }
+
+  if(id) {
+    // Editar
+    if(online) {
+      try { const ev = await apiFetch('PUT', `/events/${id}`, data); const idx = cache.events.findIndex(e => e.id === id); if(idx >= 0) cache.events[idx] = ev; saveLocal(); }
+      catch(e){ showToast('Error: '+e.message); return; }
+    } else {
+      const idx = cache.events.findIndex(e => e.id === id);
+      if(idx >= 0) { cache.events[idx] = {...cache.events[idx], ...data}; }
+      pendingSync.push({type:'event', data: {...data, id}});
+      saveLocal(); updatePendingTab();
+    }
+    closeModal();
+    if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+    else renderAllEvents();
+    showToast(`Evento "${name}" actualizado`);
   } else {
-    cache.events.unshift({...data,created_at:new Date().toISOString()});
-    pendingSync.push({type:'event',data}); saveLocal(); updatePendingTab();
+    // Crear
+    data.id = uid();
+    if(online) {
+      try { const ev = await apiFetch('POST','/events',data); cache.events.unshift(ev); saveLocal(); }
+      catch(e){ showToast('Error: '+e.message); return; }
+    } else {
+      cache.events.unshift({...data, created_at:new Date().toISOString()});
+      pendingSync.push({type:'event',data}); saveLocal(); updatePendingTab();
+    }
+    closeModal();
+    if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+    else renderAllEvents();
+    showToast(`Evento "${name}" creado`);
   }
-  closeModal();
-  if(document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
-  else renderAllEvents();
-  showToast(`Evento "${name}" creado`);
 }
 
 function renderEventGroupSelector() {
@@ -1318,6 +1372,76 @@ function viewSignature(personId){
   w.document.write(`<img src="${data}" style="max-width:100%">`);
 }
 
+function getEventAttendeeIds(eventId) {
+  // Personas que tienen registro de asistencia en el evento (presente/ausente)
+  const att = cache.attendance[eventId] || {};
+  return new Set(Object.keys(att));
+}
+
+function openEventAttendeesModal() {
+  document.getElementById('event-att-search').value = '';
+  renderEventAttendeeSelector();
+  openModal('eventAttendees');
+}
+
+function renderEventAttendeeSelector() {
+  const container = document.getElementById('event-att-list');
+  if(!container) return;
+  const selectedIds = getEventAttendeeIds(currentEvent.id);
+  const q = (document.getElementById('event-att-search')?.value || '').toLowerCase();
+  let persons = cache.persons.filter(p => (p.tipo || 'asistente') === 'asistente');
+  if(q) persons = persons.filter(p => {
+    const full = `${p.nombres||p.name||''} ${p.apellidos||''} ${p.cedula||''} ${p.cargo||p.role||''}`.toLowerCase();
+    return full.includes(q);
+  });
+  if(!persons.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px;text-align:center;">No hay personas disponibles.</div>';
+    return;
+  }
+  container.innerHTML = persons.map(p => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:14px;border-bottom:0.5px solid var(--border);">
+      <input type="checkbox" value="${p.id}" ${selectedIds.has(p.id)?'checked':''}>
+      <span>${p.nombres||p.name||''} ${p.apellidos||''} <span style="color:var(--text2);font-size:12px;">· ${p.cedula||'Sin ID'} · ${p.cargo||p.role||'Sin cargo'}</span></span>
+    </label>
+  `).join('');
+}
+
+async function saveEventAttendees() {
+  const selectedIds = Array.from(document.querySelectorAll('#event-att-list input[type="checkbox"]:checked')).map(cb => cb.value);
+  const currentIds = getEventAttendeeIds(currentEvent.id);
+  const att = cache.attendance[currentEvent.id] = cache.attendance[currentEvent.id] || {};
+
+  // Agregar nuevos como ausentes
+  for(const pid of selectedIds) {
+    if(!currentIds.has(pid)) {
+      att[pid] = false;
+      if(online) {
+        try { await apiFetch('POST', `/events/${currentEvent.id}/attendance`, {records:[{person_id:pid,present:false}]}); }
+        catch(e){ showToast('Error: '+e.message); return; }
+      } else {
+        pendingSync.push({type:'attendance', data:{event_id:currentEvent.id, person_id:pid, present:false}});
+      }
+    }
+  }
+
+  // Quitar los desmarcados
+  for(const pid of currentIds) {
+    if(!selectedIds.includes(pid)) {
+      delete att[pid];
+      if(signatures[currentEvent.id]) delete signatures[currentEvent.id][pid];
+      if(online) {
+        try { await apiFetch('POST', `/events/${currentEvent.id}/attendance`, {records:[{person_id:pid,present:false}]}); }
+        catch(e){ showToast('Error: '+e.message); return; }
+      } else {
+        pendingSync.push({type:'attendance', data:{event_id:currentEvent.id, person_id:pid, present:false}});
+      }
+    }
+  }
+
+  saveLocal(); updatePendingTab(); renderAttendance(); closeModal();
+  showToast('Asistentes del evento actualizados');
+}
+
 async function markAll(val) {
   const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
   const projectPersonIds = (cache.project_persons || [])
@@ -1434,6 +1558,7 @@ function renderProjectDetail(p) {
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
               <button class="btn btn-sm btn-primary" onclick="openAttendance('${ev.id}','project-detail')"><i class="ti ti-clipboard-list"></i>Pasar</button>
+              <button class="btn btn-sm" onclick="openEditEventModal('${ev.id}')"><i class="ti ti-pencil"></i></button>
               <button class="btn btn-sm btn-danger" onclick="deleteEvent('${ev.id}')"><i class="ti ti-trash"></i></button>
             </div>
           </div>
@@ -1468,8 +1593,10 @@ function renderAllEvents() {
           </div>
           <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
         </div>
-        <div style="flex-shrink:0;margin-left:12px">
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px">
           <button class="btn btn-sm btn-primary" onclick="openAttendance('${ev.id}','events')"><i class="ti ti-clipboard-list"></i>Pasar</button>
+          <button class="btn btn-sm" onclick="openEditEventModal('${ev.id}')"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deleteEvent('${ev.id}')"><i class="ti ti-trash"></i></button>
         </div>
       </div>
     </div>`;
@@ -1507,12 +1634,17 @@ async function openAttendance(eventId, backTo) {
 function renderAttendance() {
   const ev=currentEvent;
   const proj=cache.projects.find(p=>p.id===ev.project_id);
-  const projectPersonIds = (cache.project_persons || [])
-    .filter(ap => ap.project_id === ev.project_id)
-    .map(ap => ap.person_id);
-  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente');
-  
+  // Mostrar personas que tienen registro de asistencia en este evento
   const att=cache.attendance[ev.id]||{};
+  const attendeeIds = Object.keys(att);
+  const persons = attendeeIds.length
+    ? cache.persons.filter(p => attendeeIds.includes(p.id))
+    : cache.persons.filter(p => {
+        const projectPersonIds = (cache.project_persons || [])
+          .filter(ap => ap.project_id === ev.project_id)
+          .map(ap => ap.person_id);
+        return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
+      });
   const present=persons.filter(p=>att[p.id]).length;
   const absent=persons.length-present;
   const pct=persons.length?Math.round(present/persons.length*100):0;
@@ -1530,6 +1662,7 @@ function renderAttendance() {
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="markAll(true)"><i class="ti ti-checks"></i>Todos presentes</button>
       <button class="btn btn-sm" onclick="markAll(false)"><i class="ti ti-x"></i>Todos ausentes</button>
+      <button class="btn btn-sm" onclick="openEventAttendeesModal()"><i class="ti ti-users"></i>Gestionar asistentes</button>
     </div>
     ${persons.length===0
       ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este proyecto no tiene asistentes registrados.</p></div>`

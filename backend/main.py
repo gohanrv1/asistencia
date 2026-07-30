@@ -777,6 +777,26 @@ def create_event(data: EventCreate, current_user: User = Depends(get_current_use
         db.commit(); db.refresh(ev)
     return ev
 
+@app.get("/api/events/{event_id}", response_model=EventOut)
+def get_event(event_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ev = db.query(Event).filter(Event.id == event_id).first()
+    if not ev: raise HTTPException(404, "Evento no encontrado")
+    return ev
+
+@app.put("/api/events/{event_id}", response_model=EventOut)
+def update_event(event_id: str, data: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ev = db.query(Event).filter(Event.id == event_id).first()
+    if not ev: raise HTTPException(404, "Evento no encontrado")
+    if not db.query(Project).filter(Project.id == data.project_id).first():
+        raise HTTPException(404, "Proyecto no encontrado")
+    ev.name = data.name
+    ev.date = data.date
+    ev.notes = data.notes or ""
+    ev.project_id = data.project_id
+    ev.responsible_id = data.responsible_id
+    db.commit(); db.refresh(ev)
+    return ev
+
 @app.delete("/api/events/{event_id}", status_code=204)
 def delete_event(event_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ev = db.query(Event).filter(Event.id == event_id).first()
