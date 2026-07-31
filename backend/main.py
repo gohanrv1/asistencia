@@ -831,6 +831,17 @@ def save_attendance(event_id: str, data: AttendanceBulk, current_user: User = De
     db.commit()
     return {"ok": True}
 
+@app.delete("/api/events/{event_id}/attendance/{person_id}", status_code=204)
+def delete_attendance(event_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not db.query(Event).filter(Event.id == event_id).first():
+        raise HTTPException(404, "Evento no encontrado")
+    record = db.query(Attendance).filter(
+        Attendance.event_id == event_id,
+        Attendance.person_id == person_id
+    ).first()
+    if record:
+        db.delete(record); db.commit()
+
 # ── Endpoint: Sincronización offline ─────────────────────────────────────────
 @app.post("/api/sync")
 def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

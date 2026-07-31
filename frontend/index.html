@@ -1080,7 +1080,9 @@ function openEditEventModal(eventId) {
   populateResponsibleSelect(ev.responsible_id || '');
   renderEventGroupSelector();
   document.getElementById('ev-notes').value = ev.notes || '';
-  openModal('newEvent');
+  // Abrir modal manualmente sin resetear campos
+  document.getElementById('modal-overlay').style.display='flex';
+  document.getElementById('modal-newEvent').style.display='flex';
 }
 
 async function saveEvent() {
@@ -1424,16 +1426,16 @@ async function saveEventAttendees() {
     }
   }
 
-  // Quitar los desmarcados
+  // Quitar los desmarcados (eliminar registro de asistencia)
   for(const pid of currentIds) {
     if(!selectedIds.includes(pid)) {
       delete att[pid];
       if(signatures[currentEvent.id]) delete signatures[currentEvent.id][pid];
       if(online) {
-        try { await apiFetch('POST', `/events/${currentEvent.id}/attendance`, {records:[{person_id:pid,present:false}]}); }
+        try { await apiFetch('DELETE', `/events/${currentEvent.id}/attendance/${pid}`); }
         catch(e){ showToast('Error: '+e.message); return; }
       } else {
-        pendingSync.push({type:'attendance', data:{event_id:currentEvent.id, person_id:pid, present:false}});
+        pendingSync.push({type:'attendance', data:{event_id:currentEvent.id, person_id:pid, present:false, _delete:true}});
       }
     }
   }
