@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, String, Boolean, DateTime, ForeignKey, Text, Table, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, Field
 from typing import List, Optional
 from datetime import datetime
 import uuid
@@ -33,14 +33,6 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Tabla asociativa muchos a muchos para Proyectos y Personas
-project_person = Table(
-    "project_person",
-    Base.metadata,
-    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
-    Column("person_id", String, ForeignKey("persons.id", ondelete="CASCADE"), primary_key=True)
-)
-
 # Tabla asociativa muchos a muchos para Grupos y Personas
 group_person = Table(
     "group_person",
@@ -56,7 +48,6 @@ class Project(Base):
     name        = Column(String, nullable=False)
     description = Column(Text, default="")
     created_at  = Column(DateTime, default=datetime.utcnow)
-    persons     = relationship("Person", secondary=project_person, back_populates="projects")
     events      = relationship("Event",  back_populates="project", cascade="all, delete-orphan")
 
 class Group(Base):
@@ -74,10 +65,9 @@ class Person(Base):
     apellidos  = Column(String, nullable=False)
     cedula     = Column(String, nullable=False)
     cargo      = Column(String, nullable=False)
-    tipo       = Column(String, nullable=False, default="asistente")  # "asistente" o "responsable"
+    tipo       = Column(String, nullable=False, default="asistente")
     correo     = Column(String, default="")
     celular    = Column(String, default="")
-    projects   = relationship("Project", secondary=project_person, back_populates="persons")
     groups     = relationship("Group", secondary=group_person, back_populates="persons")
 
 class Event(Base):
@@ -331,15 +321,17 @@ class ProjectOut(BaseModel):
     class Config: from_attributes = True
 
 class PersonCreate(BaseModel):
+    model_config = {"populate_by_name": True}
     id: Optional[str] = None
-    nombres: str
-    apellidos: str
-    cedula: str
-    cargo: str
+    nombres: Optional[str] = ""
+    apellidos: Optional[str] = ""
+    cedula: Optional[str] = ""
+    cargo: Optional[str] = ""
     tipo: Optional[str] = "asistente"  # "asistente" o "responsable"
     correo: Optional[str] = ""
     celular: Optional[str] = ""
     project_id: Optional[str] = None
+    delete: Optional[bool] = Field(default=False, alias="_delete")
 
 class PersonOut(BaseModel):
     id: str
@@ -371,6 +363,7 @@ class EventCreate(BaseModel):
     project_id: str
     responsible_id: Optional[str] = None
     group_ids: Optional[List[str]] = []
+    person_ids: Optional[List[str]] = []
 
 class EventOut(BaseModel):
     id: str
@@ -389,10 +382,6 @@ class AttendanceRecord(BaseModel):
 
 class AttendanceBulk(BaseModel):
     records: List[AttendanceRecord]
-
-class ProjectPersonSync(BaseModel):
-    project_id: str
-    person_id: str
 
 class GroupPersonSync(BaseModel):
     group_id: str
@@ -425,11 +414,10 @@ class SyncPayload(BaseModel):
     persons:       List[PersonCreate]       = []
     events:        List[EventCreate]        = []
     attendance:    dict                     = {}   # { event_id: { person_id: bool } }
-    assignments:   List[ProjectPersonSync]  = []
-    unassignments: List[ProjectPersonSync]  = []
     groups:        List[GroupCreate]        = []
     group_assignments:   List[GroupPersonSync] = []
     group_unassignments: List[GroupPersonSync] = []
+    deleted_groups: List[str]                = []
 
 from datetime import timedelta
 
@@ -552,13 +540,6 @@ def delete_project(project_id: str, current_user: User = Depends(get_current_use
 def list_all_persons(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Person).all()
 
-@app.get("/api/projects/{project_id}/persons", response_model=List[PersonOut])
-def list_persons(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    proj = db.query(Project).filter(Project.id == project_id).first()
-    if not proj:
-        raise HTTPException(404, "Proyecto no encontrado")
-    return proj.persons
-
 @app.post("/api/persons", response_model=PersonOut, status_code=201)
 def create_person(data: PersonCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tipo = data.tipo if data.tipo in ("asistente", "responsable") else "asistente"
@@ -576,18 +557,8 @@ def create_person(data: PersonCreate, current_user: User = Depends(get_current_u
         )
         db.add(person)
     else:
-        # Actualizar tipo si la persona ya existe y se envía explícitamente
         person.tipo = tipo
-    
-    if data.project_id:
-        proj = db.query(Project).filter(Project.id == data.project_id).first()
-        if not proj:
-            raise HTTPException(404, "Proyecto no encontrado")
-        if person not in proj.persons:
-            proj.persons.append(person)
-            
-    db.commit()
-    db.refresh(person)
+    db.commit(); db.refresh(person)
     return person
 
 @app.delete("/api/persons/{person_id}", status_code=204)
@@ -595,32 +566,6 @@ def delete_person(person_id: str, current_user: User = Depends(get_current_user)
     person = db.query(Person).filter(Person.id == person_id).first()
     if not person: raise HTTPException(404, "Persona no encontrada")
     db.delete(person); db.commit()
-
-@app.post("/api/projects/{project_id}/persons/{person_id}", status_code=200)
-def assign_person_to_project(project_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    proj = db.query(Project).filter(Project.id == project_id).first()
-    person = db.query(Person).filter(Person.id == person_id).first()
-    if not proj or not person:
-        raise HTTPException(404, "Proyecto o persona no encontrado")
-    if person not in proj.persons:
-        proj.persons.append(person)
-        db.commit()
-    return {"ok": True}
-
-@app.delete("/api/projects/{project_id}/persons/{person_id}", status_code=204)
-def unassign_person_from_project(project_id: str, person_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    proj = db.query(Project).filter(Project.id == project_id).first()
-    person = db.query(Person).filter(Person.id == person_id).first()
-    if not proj or not person:
-        raise HTTPException(404, "Proyecto o persona no encontrado")
-    if person in proj.persons:
-        proj.persons.remove(person)
-        db.commit()
-
-@app.get("/api/project-persons")
-def list_project_persons(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    associations = db.query(project_person).all()
-    return [{"project_id": a.project_id, "person_id": a.person_id} for a in associations]
 
 # ── Endpoints: Grupos ─────────────────────────────────────────────────────────
 @app.get("/api/groups", response_model=List[GroupWithPersonsOut])
@@ -692,21 +637,16 @@ def download_csv_template(current_user: User = Depends(get_current_user)):
         headers={"Content-Disposition": "attachment; filename=plantilla_personas.csv"}
     )
 
-@app.post("/api/projects/{project_id}/persons/upload-csv")
-def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    proj = db.query(Project).filter(Project.id == project_id).first()
-    if not proj:
-        raise HTTPException(404, "Proyecto no encontrado")
-    
+@app.post("/api/persons/upload-csv")
+def upload_csv(file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         content = file.file.read().decode("utf-8")
         reader = csv.DictReader(io.StringIO(content))
     except Exception as e:
         raise HTTPException(400, f"Error al procesar el archivo CSV: {str(e)}")
-    
+
     created_count = 0
-    assigned_count = 0
-    
+
     for row in reader:
         nombres = row.get("nombres", "").strip()
         apellidos = row.get("apellidos", "").strip()
@@ -714,13 +654,13 @@ def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User
         cargo = row.get("cargo", "").strip()
         tipo_raw = row.get("tipo", "").strip().lower()
         tipo = tipo_raw if tipo_raw in ("asistente", "responsable") else "asistente"
-        
+
         if not nombres or not apellidos or not cedula or not cargo:
             continue
-            
+
         correo = row.get("correo", "").strip()
         celular = row.get("celular", "").strip()
-        
+
         person = db.query(Person).filter(Person.cedula == cedula).first()
         if not person:
             person = Person(
@@ -737,13 +677,9 @@ def upload_csv(project_id: str, file: UploadFile = File(...), current_user: User
             created_count += 1
         else:
             person.tipo = tipo
-            
-        if person not in proj.persons:
-            proj.persons.append(person)
-            assigned_count += 1
-            
+
     db.commit()
-    return {"ok": True, "created": created_count, "assigned": assigned_count}
+    return {"ok": True, "created": created_count, "assigned": 0}
 
 # ── Endpoints: Eventos ────────────────────────────────────────────────────────
 @app.get("/api/events", response_model=List[EventOut])
@@ -760,21 +696,32 @@ def create_event(data: EventCreate, current_user: User = Depends(get_current_use
     db.add(ev); db.commit(); db.refresh(ev)
 
     # Precargar asistencia con personas de los grupos seleccionados
+    seen = set()
     group_ids = data.group_ids or []
-    if group_ids:
-        seen = set()
-        for gid in group_ids:
-            group = db.query(Group).filter(Group.id == gid).first()
-            if group:
-                for person in group.persons:
-                    if person.id not in seen and (person.tipo or "asistente") == "asistente":
-                        seen.add(person.id)
-                        existing = db.query(Attendance).filter(
-                            Attendance.event_id == ev.id,
-                            Attendance.person_id == person.id
-                        ).first()
-                        if not existing:
-                            db.add(Attendance(event_id=ev.id, person_id=person.id, present=False, signature=""))
+    for gid in group_ids:
+        group = db.query(Group).filter(Group.id == gid).first()
+        if group:
+            for person in group.persons:
+                if person.id not in seen and (person.tipo or "asistente") == "asistente":
+                    seen.add(person.id)
+                    existing = db.query(Attendance).filter(
+                        Attendance.event_id == ev.id,
+                        Attendance.person_id == person.id
+                    ).first()
+                    if not existing:
+                        db.add(Attendance(event_id=ev.id, person_id=person.id, present=False, signature=""))
+    # Precargar personas individuales seleccionadas
+    person_ids = data.person_ids or []
+    for pid in person_ids:
+        if pid not in seen:
+            seen.add(pid)
+            existing = db.query(Attendance).filter(
+                Attendance.event_id == ev.id,
+                Attendance.person_id == pid
+            ).first()
+            if not existing:
+                db.add(Attendance(event_id=ev.id, person_id=pid, present=False, signature=""))
+    if seen:
         db.commit(); db.refresh(ev)
     return ev
 
@@ -851,7 +798,7 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     y los aplica en orden: proyectos → personas → eventos → asistencia.
     Usa upsert (insertar si no existe, ignorar si ya existe).
     """
-    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "assignments": 0, "unassignments": 0, "groups": 0, "group_assignments": 0, "group_unassignments": 0, "deleted_groups": 0}
+    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "groups": 0, "group_assignments": 0, "group_unassignments": 0, "deleted_groups": 0}
 
     for p in payload.projects:
         if not db.query(Project).filter(Project.id == p.id).first():
@@ -861,15 +808,20 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     db.flush()
 
     for p in payload.persons:
-        tipo = p.tipo if p.tipo in ("asistente", "responsable") else "asistente"
         person = db.query(Person).filter(Person.id == p.id).first()
+        if p.delete:
+            if person:
+                db.delete(person)
+                synced["persons"] = synced.get("persons", 0) + 1
+            continue
+        tipo = p.tipo if p.tipo in ("asistente", "responsable") else "asistente"
         if not person:
             person = Person(
                 id=p.id,
-                nombres=p.nombres,
-                apellidos=p.apellidos,
-                cedula=p.cedula,
-                cargo=p.cargo,
+                nombres=p.nombres or "",
+                apellidos=p.apellidos or "",
+                cedula=p.cedula or "",
+                cargo=p.cargo or "",
                 tipo=tipo,
                 correo=p.correo or "",
                 celular=p.celular or ""
@@ -878,11 +830,6 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
             synced["persons"] += 1
         else:
             person.tipo = tipo
-        
-        if p.project_id:
-            proj = db.query(Project).filter(Project.id == p.project_id).first()
-            if proj and person not in proj.persons:
-                proj.persons.append(person)
 
     db.flush()
 
@@ -891,30 +838,42 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
             if db.query(Project).filter(Project.id == e.project_id).first():
                 db.add(Event(id=e.id, name=e.name, date=e.date, notes=e.notes or "", project_id=e.project_id, responsible_id=e.responsible_id))
                 synced["events"] += 1
-                # Precargar asistencia desde grupos si vienen group_ids
+                # Precargar asistencia desde grupos/personas si vienen
+                seen = set()
                 if e.group_ids:
                     for gid in e.group_ids:
                         group = db.query(Group).filter(Group.id == gid).first()
                         if group:
                             for person in group.persons:
-                                if (person.tipo or "asistente") == "asistente":
+                                if person.id not in seen and (person.tipo or "asistente") == "asistente":
+                                    seen.add(person.id)
                                     existing = db.query(Attendance).filter(
                                         Attendance.event_id == e.id,
                                         Attendance.person_id == person.id
                                     ).first()
                                     if not existing:
                                         db.add(Attendance(event_id=e.id, person_id=person.id, present=False, signature=""))
+                if e.person_ids:
+                    for pid in e.person_ids:
+                        if pid not in seen:
+                            seen.add(pid)
+                            existing = db.query(Attendance).filter(
+                                Attendance.event_id == e.id,
+                                Attendance.person_id == pid
+                            ).first()
+                            if not existing:
+                                db.add(Attendance(event_id=e.id, person_id=pid, present=False, signature=""))
 
     db.flush()
 
     # Eliminar grupos marcados para borrado
+    for gid in payload.deleted_groups:
+        existing_group = db.query(Group).filter(Group.id == gid).first()
+        if existing_group:
+            db.delete(existing_group)
+            synced["deleted_groups"] = synced.get("deleted_groups", 0) + 1
+
     for g in payload.groups:
-        if getattr(g, '_delete', False):
-            existing_group = db.query(Group).filter(Group.id == g.id).first()
-            if existing_group:
-                db.delete(existing_group)
-                synced["deleted_groups"] = synced.get("deleted_groups", 0) + 1
-            continue
         existing_group = db.query(Group).filter(Group.id == g.id).first()
         if not existing_group:
             db.add(Group(id=g.id, name=g.name, description=g.description or ""))
@@ -940,20 +899,6 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
             synced["group_unassignments"] = synced.get("group_unassignments", 0) + 1
 
     db.flush()
-
-    for assoc in payload.assignments:
-        proj = db.query(Project).filter(Project.id == assoc.project_id).first()
-        person = db.query(Person).filter(Person.id == assoc.person_id).first()
-        if proj and person and person not in proj.persons:
-            proj.persons.append(person)
-            synced["assignments"] += 1
-
-    for assoc in payload.unassignments:
-        proj = db.query(Project).filter(Project.id == assoc.project_id).first()
-        person = db.query(Person).filter(Person.id == assoc.person_id).first()
-        if proj and person and person in proj.persons:
-            proj.persons.remove(person)
-            synced["unassignments"] += 1
 
     db.flush()
 
@@ -1018,50 +963,205 @@ def _auto_width(ws):
 
 def _build_excel_report(db: Session) -> io.BytesIO:
     wb = Workbook()
-    # Eliminar hoja por defecto y crear las 3 personalizadas
     wb.remove(wb.active)
-
-    # ── Hoja 1: Resumen General ───────────────────────────────────────────────
-    ws_summary = wb.create_sheet("Resumen General")
-    ws_summary.append(["INFORME CONSORCIO META TIC - ASISTENCIA"])
-    ws_summary.append(["Generado el", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")])
-    ws_summary.append([])
 
     projects = db.query(Project).all()
     persons = db.query(Person).all()
+    groups = db.query(Group).all()
     events = db.query(Event).all()
     total_att = db.query(Attendance).count()
     total_present = db.query(Attendance).filter(Attendance.present == True).count()
     attendance_pct = round((total_present / total_att * 100), 1) if total_att else 0
 
-    summary_data = [
-        ["Métrica", "Valor"],
-        ["Total de proyectos", len(projects)],
-        ["Total de personas registradas", len(persons)],
-        ["Total de eventos", len(events)],
-        ["Total de registros de asistencia", total_att],
-        ["Total de presentes", total_present],
-        ["Total de ausentes", total_att - total_present],
-        ["Porcentaje de asistencia", f"{attendance_pct}%"],
-    ]
-    for row in summary_data:
-        ws_summary.append(row)
-    _style_header(ws_summary, 4)
+    # ── Hoja 1: Resumen Ejecutivo ─────────────────────────────────────────────
+    ws_summary = wb.create_sheet("📊 Resumen Ejecutivo")
+    ws_summary.append(["INFORME CONSORCIO META TIC - ASISTENCIA"])
+    ws_summary.append(["Generado el", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")])
+    ws_summary.append([])
+    ws_summary.append(["INDICADORES CLAVE (KPIs)"])
+    ws_summary.append(["Métrica", "Valor"])
+    ws_summary.append(["Total de proyectos", len(projects)])
+    ws_summary.append(["Total de grupos", len(groups)])
+    ws_summary.append(["Total de personas registradas", len(persons)])
+    ws_summary.append(["Total de eventos realizados", len(events)])
+    ws_summary.append(["Total de registros de asistencia", total_att])
+    ws_summary.append(["Total de presentes", total_present])
+    ws_summary.append(["Total de ausentes", total_att - total_present])
+    ws_summary.append(["Porcentaje de asistencia global", f"{attendance_pct}%"])
+    _style_header(ws_summary, 5)
     ws_summary.merge_cells("A1:B1")
     ws_summary["A1"].font = Font(size=16, bold=True, color="0C447C")
     ws_summary["A1"].alignment = Alignment(horizontal="center")
     ws_summary["A2"].font = Font(italic=True, color="666666")
+    ws_summary.merge_cells("A4:B4")
+    ws_summary["A4"].font = Font(size=12, bold=True, color="0C447C")
+    ws_summary["A4"].alignment = Alignment(horizontal="center")
     _auto_width(ws_summary)
 
-    # ── Hoja 2: Asistencia por Evento ─────────────────────────────────────────
-    ws_events = wb.create_sheet("Asistencia por Evento")
+    # ── Hoja 2: ⚠️ Eventos Críticos (Requieren Atención) ─────────────────────
+    ws_critical = wb.create_sheet("⚠️ Eventos Críticos")
+    ws_critical.append(["EVENTOS CON BAJA ASISTENCIA (< 70%)"])
+    ws_critical.append([])
+    ws_critical.append([
+        "Evento", "Fecha", "Proyecto", "Responsable", "Esperados",
+        "Presentes", "Ausentes", "% Asistencia", "Estado"
+    ])
+    _style_header(ws_critical, 3)
+    ws_critical.merge_cells("A1:I1")
+    ws_critical["A1"].font = Font(size=14, bold=True, color="C00000")
+    ws_critical["A1"].alignment = Alignment(horizontal="center")
+
+    critical_list = []
+    for ev in events:
+        expected = db.query(Attendance).filter(Attendance.event_id == ev.id).count()
+        if expected == 0:
+            continue
+        present = db.query(Attendance).filter(Attendance.event_id == ev.id, Attendance.present == True).count()
+        pct = round((present / expected * 100), 1)
+        if pct < 70:
+            resp = ""
+            if ev.responsible_id:
+                r = db.query(Person).filter(Person.id == ev.responsible_id).first()
+                if r: resp = f"{r.nombres} {r.apellidos}".strip()
+            critical_list.append({
+                "name": ev.name,
+                "date": ev.date,
+                "project": ev.project.name if ev.project else "",
+                "responsible": resp,
+                "expected": expected,
+                "present": present,
+                "absent": expected - present,
+                "pct": pct,
+                "status": "🔴 CRÍTICO" if pct < 50 else "🟡 BAJO"
+            })
+    
+    critical_list = sorted(critical_list, key=lambda x: x['pct'])
+    for item in critical_list:
+        ws_critical.append([
+            item["name"], item["date"], item["project"], item["responsible"],
+            item["expected"], item["present"], item["absent"], f"{item['pct']}%", item["status"]
+        ])
+    
+    if not critical_list:
+        ws_critical.append(["No hay eventos con asistencia baja. ¡Excelente trabajo!"])
+    _auto_width(ws_critical)
+
+    # ── Hoja 3: 🏆 Ranking de Proyectos ──────────────────────────────────────
+    ws_ranking = wb.create_sheet("🏆 Ranking de Proyectos")
+    ws_ranking.append(["RANKING DE PROYECTOS POR % DE ASISTENCIA"])
+    ws_ranking.append([])
+    ws_ranking.append([
+        "Posición", "Proyecto", "Descripción", "# Eventos", "Participantes Únicos",
+        "Esperados Total", "Presentes Total", "% Asistencia", "Clasificación"
+    ])
+    _style_header(ws_ranking, 3)
+    ws_ranking.merge_cells("A1:I1")
+    ws_ranking["A1"].font = Font(size=14, bold=True, color="0C7C0C")
+    ws_ranking["A1"].alignment = Alignment(horizontal="center")
+
+    project_ranking = []
+    for proj in projects:
+        proj_events = proj.events
+        if not proj_events:
+            continue
+        
+        # Participantes únicos (personas que han asistido a al menos un evento del proyecto)
+        unique_persons = set()
+        for ev in proj_events:
+            for att in db.query(Attendance).filter(Attendance.event_id == ev.id).all():
+                unique_persons.add(att.person_id)
+        
+        total_present_proj = 0
+        total_expected_proj = 0
+        for ev in proj_events:
+            expected_ev = db.query(Attendance).filter(Attendance.event_id == ev.id).count()
+            present_ev = db.query(Attendance).filter(Attendance.event_id == ev.id, Attendance.present == True).count()
+            total_present_proj += present_ev
+            total_expected_proj += expected_ev
+        
+        if total_expected_proj > 0:
+            pct_proj = round((total_present_proj / total_expected_proj * 100), 1)
+            classification = "🥇 Excelente" if pct_proj >= 90 else "🥈 Bueno" if pct_proj >= 75 else "🥉 Regular" if pct_proj >= 60 else "❌ Bajo"
+            project_ranking.append({
+                "name": proj.name,
+                "desc": proj.description or "-",
+                "events": len(proj_events),
+                "unique_persons": len(unique_persons),
+                "expected": total_expected_proj,
+                "present": total_present_proj,
+                "pct": pct_proj,
+                "classification": classification
+            })
+    
+    project_ranking = sorted(project_ranking, key=lambda x: x['pct'], reverse=True)
+    for i, item in enumerate(project_ranking, 1):
+        ws_ranking.append([
+            i, item["name"], item["desc"], item["events"], item["unique_persons"],
+            item["expected"], item["present"], f"{item['pct']}%", item["classification"]
+        ])
+    _auto_width(ws_ranking)
+
+    # ── Hoja 4: 👥 Análisis por Grupos ───────────────────────────────────────
+    ws_groups_analysis = wb.create_sheet("👥 Análisis por Grupos")
+    ws_groups_analysis.append(["DESEMPEÑO DE ASISTENCIA POR GRUPOS"])
+    ws_groups_analysis.append([])
+    ws_groups_analysis.append([
+        "Grupo", "Descripción", "# Miembros", "Registros Totales",
+        "Presentes", "Ausentes", "% Asistencia", "Evaluación"
+    ])
+    _style_header(ws_groups_analysis, 3)
+    ws_groups_analysis.merge_cells("A1:H1")
+    ws_groups_analysis["A1"].font = Font(size=14, bold=True, color="0C447C")
+    ws_groups_analysis["A1"].alignment = Alignment(horizontal="center")
+
+    group_stats = []
+    all_groups = db.query(Group).all()
+    for g in all_groups:
+        if not g.persons:
+            continue
+        total_expected_group = 0
+        total_present_group = 0
+        for p in g.persons:
+            att_person = db.query(Attendance).filter(Attendance.person_id == p.id).count()
+            pres_person = db.query(Attendance).filter(Attendance.person_id == p.id, Attendance.present == True).count()
+            total_expected_group += att_person
+            total_present_group += pres_person
+        
+        if total_expected_group > 0:
+            pct_group = round((total_present_group / total_expected_group * 100), 1)
+            evaluation = "⭐⭐⭐ Excelente" if pct_group >= 90 else "⭐⭐ Bueno" if pct_group >= 75 else "⭐ Regular" if pct_group >= 60 else "⚠️ Requiere atención"
+            group_stats.append({
+                "name": g.name,
+                "desc": g.description or "-",
+                "members": len(g.persons),
+                "expected": total_expected_group,
+                "present": total_present_group,
+                "absent": total_expected_group - total_present_group,
+                "pct": pct_group,
+                "evaluation": evaluation
+            })
+    
+    group_stats = sorted(group_stats, key=lambda x: x['pct'], reverse=True)
+    for item in group_stats:
+        ws_groups_analysis.append([
+            item["name"], item["desc"], item["members"], item["expected"],
+            item["present"], item["absent"], f"{item['pct']}%", item["evaluation"]
+        ])
+    
+    if not group_stats:
+        ws_groups_analysis.append(["No hay datos de grupos con asistencia registrada."])
+    _auto_width(ws_groups_analysis)
+
+    # ── Hoja 5: 📋 Listado de Todos los Eventos ──────────────────────────────
+    ws_events = wb.create_sheet("📋 Todos los Eventos")
     ws_events.append([
-        "Evento", "Fecha", "Proyecto", "Responsable", "Asistentes esperados",
-        "Presentes", "Ausentes", "% Asistencia", "Firma promedio"
+        "Evento", "Fecha", "Proyecto", "Responsable", "Asistentes Esperados",
+        "Presentes", "Ausentes", "% Asistencia", "% con Firma"
     ])
     _style_header(ws_events, 1)
 
-    for ev in events:
+    events_sorted = sorted(events, key=lambda e: e.date, reverse=True)
+    for ev in events_sorted:
         proj = ev.project
         responsible = ""
         if ev.responsible_id:
@@ -1093,56 +1193,56 @@ def _build_excel_report(db: Session) -> io.BytesIO:
         ])
     _auto_width(ws_events)
 
-    # ── Hoja 3: Asistencia por Proyecto ───────────────────────────────────────
-    ws_proj = wb.create_sheet("Asistencia por Proyecto")
-    ws_proj.append([
-        "Proyecto", "Descripción", "Miembros", "Responsables", "Asistentes",
-        "Eventos", "Presentes totales", "Ausentes totales", "% Asistencia"
+    # ── Hoja 6: 🎯 Ranking de Personas ───────────────────────────────────────
+    ws_persons = wb.create_sheet("🎯 Ranking de Personas")
+    ws_persons.append(["RANKING DE PERSONAS POR ASISTENCIA"])
+    ws_persons.append([])
+    ws_persons.append([
+        "Posición", "Nombres", "Apellidos", "Cédula", "Cargo",
+        "Eventos Asignados", "Presentes", "Ausentes", "% Asistencia", "Evaluación"
     ])
-    _style_header(ws_proj, 1)
+    _style_header(ws_persons, 3)
+    ws_persons.merge_cells("A1:J1")
+    ws_persons["A1"].font = Font(size=14, bold=True, color="0C447C")
+    ws_persons["A1"].alignment = Alignment(horizontal="center")
 
-    for proj in projects:
-        members = proj.persons
-        responsibles = [p for p in members if p.tipo == "responsable"]
-        assistants = [p for p in members if p.tipo == "asistente"]
-        proj_events = proj.events
-
-        total_present_proj = 0
-        total_expected_proj = 0
-        for ev in proj_events:
-            expected_ev = len(assistants)
-            present_ev = db.query(Attendance).filter(
-                Attendance.event_id == ev.id,
-                Attendance.present == True
-            ).count()
-            total_present_proj += present_ev
-            total_expected_proj += expected_ev
-
-        total_absent_proj = total_expected_proj - total_present_proj
-        pct_proj = round((total_present_proj / total_expected_proj * 100), 1) if total_expected_proj else 0
-
-        ws_proj.append([
-            proj.name,
-            proj.description or "",
-            len(members),
-            ", ".join([f"{r.nombres} {r.apellidos}".strip() for r in responsibles]),
-            len(assistants),
-            len(proj_events),
-            total_present_proj,
-            total_absent_proj if total_absent_proj >= 0 else 0,
-            f"{pct_proj}%"
+    person_stats = []
+    for p in persons:
+        att_count = db.query(Attendance).filter(Attendance.person_id == p.id).count()
+        if att_count == 0:
+            continue
+        pres_count = db.query(Attendance).filter(Attendance.person_id == p.id, Attendance.present == True).count()
+        pct_person = round((pres_count / att_count * 100), 1)
+        evaluation = "🌟 Excelente" if pct_person >= 90 else "👍 Bueno" if pct_person >= 75 else "🔔 Regular" if pct_person >= 60 else "⚠️ Bajo"
+        person_stats.append({
+            "nombres": p.nombres,
+            "apellidos": p.apellidos,
+            "cedula": p.cedula,
+            "cargo": p.cargo,
+            "expected": att_count,
+            "present": pres_count,
+            "absent": att_count - pres_count,
+            "pct": pct_person,
+            "evaluation": evaluation
+        })
+    
+    person_stats = sorted(person_stats, key=lambda x: x['pct'], reverse=True)
+    for i, item in enumerate(person_stats, 1):
+        ws_persons.append([
+            i, item["nombres"], item["apellidos"], item["cedula"], item["cargo"],
+            item["expected"], item["present"], item["absent"], f"{item['pct']}%", item["evaluation"]
         ])
-    _auto_width(ws_proj)
+    _auto_width(ws_persons)
 
-    # ── Hoja 4: Detalle de Asistencia ─────────────────────────────────────────
-    ws_detail = wb.create_sheet("Detalle de Asistencia")
+    # ── Hoja 7: 📝 Detalle Completo de Asistencia ────────────────────────────
+    ws_detail = wb.create_sheet("📝 Detalle Completo")
     ws_detail.append([
         "Proyecto", "Evento", "Fecha", "Cédula", "Nombres", "Apellidos",
-        "Cargo", "Correo", "Celular", "Estado", "Tiene firma"
+        "Cargo", "Correo", "Celular", "Estado", "Tiene Firma"
     ])
     _style_header(ws_detail, 1)
 
-    for ev in events:
+    for ev in events_sorted:
         proj = ev.project
         attendance_map = {
             a.person_id: a for a in db.query(Attendance).filter(Attendance.event_id == ev.id).all()
@@ -1168,11 +1268,10 @@ def _build_excel_report(db: Session) -> io.BytesIO:
             ])
     _auto_width(ws_detail)
 
-    # ── Hoja 5: Grupos ────────────────────────────────────────────────────────
-    ws_groups = wb.create_sheet("Grupos")
-    ws_groups.append(["Grupo", "Descripción", "Total personas", "Cédulas", "Nombres"])
+    # ── Hoja 8: 🗂️ Catálogo de Grupos ────────────────────────────────────────
+    ws_groups = wb.create_sheet("🗂️ Catálogo de Grupos")
+    ws_groups.append(["Grupo", "Descripción", "Total Personas", "Cédulas", "Nombres Completos"])
     _style_header(ws_groups, 1)
-    all_groups = db.query(Group).order_by(Group.name).all()
     for g in all_groups:
         members = g.persons
         ws_groups.append([
@@ -1208,17 +1307,19 @@ def download_excel_report(
         raise HTTPException(status_code=500, detail=f"Error generando informe: {str(e)}")
 
 
-# ── Endpoint: Estadísticas simples para dashboard ─────────────────────────────
+# ── Endpoint: Estadísticas mejoradas para dashboard ──────────────────────────
 @app.get("/api/stats")
 def get_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # ── KPIs Básicos ──
     projects = db.query(Project).count()
     persons = db.query(Person).count()
+    groups = db.query(Group).count()
     events = db.query(Event).count()
     total_att = db.query(Attendance).count()
     total_present = db.query(Attendance).filter(Attendance.present == True).count()
     attendance_pct = round((total_present / total_att * 100), 1) if total_att else 0
 
-    # últimos 5 eventos con porcentaje de asistencia
+    # ── Eventos Recientes ──
     recent = []
     recent_evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
     for e in recent_evs:
@@ -1229,16 +1330,149 @@ def get_stats(current_user: User = Depends(get_current_user), db: Session = Depe
         if e.responsible_id:
             r = db.query(Person).filter(Person.id == e.responsible_id).first()
             if r: resp = f"{r.nombres} {r.apellidos}".strip()
-        recent.append({"id": e.id, "name": e.name, "date": e.date, "present": present, "expected": total_expected, "pct": pct, "responsible": resp})
+        recent.append({
+            "id": e.id, 
+            "name": e.name, 
+            "date": e.date, 
+            "project": e.project.name if e.project else "", 
+            "present": present, 
+            "expected": total_expected, 
+            "pct": pct, 
+            "responsible": resp
+        })
+
+    # ── Eventos Críticos (asistencia < 70%) ──
+    critical_events = []
+    all_events = db.query(Event).all()
+    for e in all_events:
+        present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
+        total_expected = db.query(Attendance).filter(Attendance.event_id == e.id).count()
+        if total_expected > 0:
+            pct = round((present / total_expected * 100), 1)
+            if pct < 70:
+                critical_events.append({
+                    "id": e.id,
+                    "name": e.name,
+                    "date": e.date,
+                    "project": e.project.name if e.project else "",
+                    "present": present,
+                    "expected": total_expected,
+                    "pct": pct
+                })
+    critical_events = sorted(critical_events, key=lambda x: x['pct'])[:5]  # Top 5 peores
+
+    # ── Ranking de Proyectos ──
+    project_ranking = []
+    all_projects = db.query(Project).all()
+    for proj in all_projects:
+        proj_events = proj.events
+        if not proj_events:
+            continue
+        total_present_proj = 0
+        total_expected_proj = 0
+        for ev in proj_events:
+            expected_ev = db.query(Attendance).filter(Attendance.event_id == ev.id).count()
+            present_ev = db.query(Attendance).filter(Attendance.event_id == ev.id, Attendance.present == True).count()
+            total_present_proj += present_ev
+            total_expected_proj += expected_ev
+        if total_expected_proj > 0:
+            pct_proj = round((total_present_proj / total_expected_proj * 100), 1)
+            project_ranking.append({
+                "id": proj.id,
+                "name": proj.name,
+                "events": len(proj_events),
+                "expected": total_expected_proj,
+                "present": total_present_proj,
+                "pct": pct_proj
+            })
+    project_ranking = sorted(project_ranking, key=lambda x: x['pct'], reverse=True)
+    top_projects = project_ranking[:5]
+    worst_projects = project_ranking[-5:] if len(project_ranking) > 5 else []
+
+    # ── Análisis por Grupos ──
+    group_stats = []
+    all_groups = db.query(Group).all()
+    for g in all_groups:
+        if not g.persons:
+            continue
+        # Contar asistencias de todos los miembros del grupo
+        total_expected_group = 0
+        total_present_group = 0
+        for p in g.persons:
+            att_person = db.query(Attendance).filter(Attendance.person_id == p.id).count()
+            pres_person = db.query(Attendance).filter(Attendance.person_id == p.id, Attendance.present == True).count()
+            total_expected_group += att_person
+            total_present_group += pres_person
+        if total_expected_group > 0:
+            pct_group = round((total_present_group / total_expected_group * 100), 1)
+            group_stats.append({
+                "id": g.id,
+                "name": g.name,
+                "members": len(g.persons),
+                "expected": total_expected_group,
+                "present": total_present_group,
+                "pct": pct_group
+            })
+    group_stats = sorted(group_stats, key=lambda x: x['pct'], reverse=True)
+
+    # ── Personas con mejor y peor asistencia ──
+    person_stats = []
+    all_persons = db.query(Person).all()
+    for p in all_persons:
+        att_count = db.query(Attendance).filter(Attendance.person_id == p.id).count()
+        if att_count == 0:
+            continue
+        pres_count = db.query(Attendance).filter(Attendance.person_id == p.id, Attendance.present == True).count()
+        pct_person = round((pres_count / att_count * 100), 1) if att_count else 0
+        person_stats.append({
+            "id": p.id,
+            "name": f"{p.nombres} {p.apellidos}".strip(),
+            "cedula": p.cedula,
+            "cargo": p.cargo,
+            "expected": att_count,
+            "present": pres_count,
+            "pct": pct_person
+        })
+    person_stats = sorted(person_stats, key=lambda x: x['pct'], reverse=True)
+    top_persons = person_stats[:5]
+    worst_persons = person_stats[-5:] if len(person_stats) > 5 else []
+
+    # ── Tendencia de asistencia (últimos 10 eventos) ──
+    trend_events = db.query(Event).order_by(Event.date.desc()).limit(10).all()
+    trend_data = []
+    for e in reversed(trend_events):  # Orden cronológico
+        present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
+        total_expected = db.query(Attendance).filter(Attendance.event_id == e.id).count()
+        pct = round((present / total_expected * 100), 1) if total_expected else 0
+        trend_data.append({
+            "date": e.date,
+            "name": e.name,
+            "pct": pct
+        })
 
     return {
+        # KPIs básicos
         "projects": projects,
         "persons": persons,
+        "groups": groups,
         "events": events,
         "attendance_records": total_att,
         "attendance_present": total_present,
         "attendance_pct": attendance_pct,
-        "recent_events": recent
+        
+        # Eventos
+        "recent_events": recent,
+        "critical_events": critical_events,
+        
+        # Rankings
+        "top_projects": top_projects,
+        "worst_projects": worst_projects,
+        "top_persons": top_persons,
+        "worst_persons": worst_persons,
+        
+        # Análisis
+        "group_stats": group_stats,
+        "trend_data": trend_data
     }
 
 

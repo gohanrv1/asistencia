@@ -300,7 +300,11 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
     </div>
     <div id="view-groups" class="view">
       <div class="sh"><span class="st">Grupos de asistentes</span>
-        <button class="btn btn-primary btn-sm" onclick="openModal('newGroup')"><i class="ti ti-plus"></i>Nuevo grupo</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm" onclick="openModal('newPerson')"><i class="ti ti-user-plus"></i>Nueva persona</button>
+          <button class="btn btn-sm" onclick="openModal('importCsv')"><i class="ti ti-file-upload"></i>Importar CSV</button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('newGroup')"><i class="ti ti-plus"></i>Nuevo grupo</button>
+        </div>
       </div>
       <div class="search-bar"><i class="ti ti-search"></i>
         <input type="text" id="search-groups" placeholder="Buscar grupos..." oninput="renderGroups()">
@@ -358,30 +362,10 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
   </div>
   <div id="modal-newPerson" class="overlay" style="display:none">
     <div class="modal" style="max-width: 480px;">
-      <div class="modal-title" style="margin-bottom: 8px;">Agregar persona al proyecto</div>
-      
-      <!-- Pestañas -->
-      <div style="display:flex; border-bottom: 0.5px solid var(--border); margin-bottom: 16px;">
-        <button id="tab-opt-existing" class="nav-btn active" onclick="setPersonModalTab('existing')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-user-check" style="font-size:16px;"></i>Existente</button>
-        <button id="tab-opt-new" class="nav-btn" onclick="setPersonModalTab('new')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-user-plus" style="font-size:16px;"></i>Nueva</button>
-        <button id="tab-opt-csv" class="nav-btn" onclick="setPersonModalTab('csv')" style="flex:1; border:none; padding:8px 0; font-size:12px; font-family:inherit;"><i class="ti ti-file-upload" style="font-size:16px;"></i>CSV</button>
-      </div>
-      
-      <!-- Contenido Pestaña: Existente -->
-      <div id="person-tab-existing" class="modal-tab-content">
-        <label>Seleccionar persona</label>
-        <select id="select-existing-person" style="margin-bottom: 12px;"></select>
-        <div id="no-existing-msg" style="display:none; font-size: 13px; color: var(--text2); text-align: center; padding: 16px 8px;">
-          No hay más personas disponibles para asignar. ¡Registra una nueva!
-        </div>
-        <div class="modal-actions">
-          <button class="btn" onclick="closeModal()">Cancelar</button>
-          <button id="btn-assign-existing" class="btn btn-primary" onclick="assignExistingPerson()">Asignar</button>
-        </div>
-      </div>
-      
+      <div class="modal-title" style="margin-bottom: 8px;">Nueva persona</div>
+
       <!-- Contenido Pestaña: Nueva -->
-      <div id="person-tab-new" class="modal-tab-content" style="display:none;">
+      <div id="person-tab-new" class="modal-tab-content">
         <label>Nombres</label><input type="text" id="person-nombres" placeholder="Ej: Ana Maria">
         <label>Apellidos</label><input type="text" id="person-apellidos" placeholder="Ej: López Gómez">
         <label>Cédula</label><input type="text" id="person-cedula" placeholder="Ej: 10203040">
@@ -395,24 +379,25 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
         <label>Celular (opcional)</label><input type="text" id="person-celular" placeholder="Ej: 3001234567">
         <div class="modal-actions">
           <button class="btn" onclick="closeModal()">Cancelar</button>
-          <button class="btn btn-primary" onclick="createNewPerson()">Crear y Asignar</button>
+          <button class="btn btn-primary" onclick="createNewPerson()">Crear</button>
         </div>
       </div>
-      
-      <!-- Contenido Pestaña: CSV -->
-      <div id="person-tab-csv" class="modal-tab-content" style="display:none;">
-        <p style="font-size: 13px; color: var(--text2); margin-bottom: 12px;">
-          Carga un archivo CSV con las columnas: <code style="background:var(--bg2); padding: 2px 4px; border-radius: 4px;">nombres,apellidos,cedula,cargo,tipo,correo,celular</code>. El campo <strong>tipo</strong> debe ser <code>asistente</code> o <code>responsable</code>.
-        </p>
-        <div style="margin-bottom: 16px;">
-          <a href="#" onclick="downloadCsvTemplate(event)" class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 4px; color: var(--purple); text-decoration: none; border-color: var(--purple);"><i class="ti ti-download"></i>Descargar plantilla CSV</a>
-        </div>
-        <label>Archivo CSV</label>
-        <input type="file" id="person-csv-file" accept=".csv" style="padding: 8px 4px;">
-        <div class="modal-actions">
-          <button class="btn" onclick="closeModal()">Cancelar</button>
-          <button class="btn btn-primary" onclick="uploadCsvFile()">Importar</button>
-        </div>
+    </div>
+  </div>
+  <div id="modal-importCsv" class="overlay" style="display:none">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-title">Importar personas desde CSV</div>
+      <p style="font-size: 13px; color: var(--text2); margin-bottom: 12px;">
+        Carga un archivo CSV con las columnas: <code style="background:var(--bg2); padding: 2px 4px; border-radius: 4px;">nombres,apellidos,cedula,cargo,tipo,correo,celular</code>. El campo <strong>tipo</strong> debe ser <code>asistente</code> o <code>responsable</code>.
+      </p>
+      <div style="margin-bottom: 16px;">
+        <a href="#" onclick="downloadCsvTemplate(event)" class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 4px; color: var(--purple); text-decoration: none; border-color: var(--purple);"><i class="ti ti-download"></i>Descargar plantilla CSV</a>
+      </div>
+      <label>Archivo CSV</label>
+      <input type="file" id="person-csv-file" accept=".csv" style="padding: 8px 4px;">
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="uploadCsvFile()">Importar</button>
       </div>
     </div>
   </div>
@@ -425,8 +410,14 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;}
       <label>Fecha</label><input type="date" id="ev-date">
       <label>Responsable (persona)</label><select id="ev-responsible"></select>
       <label>Grupos de asistentes (opcional)</label>
-      <div id="ev-groups" style="max-height:160px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px;background:var(--bg2);"></div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Al crear el evento se precargarán todos los asistentes de los grupos seleccionados.</div>
+      <div id="ev-groups" style="max-height:160px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:4px;background:var(--bg2);"></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Se precargarán todos los asistentes de los grupos seleccionados.</div>
+      <label>Personas individuales (opcional)</label>
+      <div class="search-bar" style="margin-bottom:8px;"><i class="ti ti-search"></i>
+        <input type="text" id="ev-person-search" placeholder="Buscar personas..." oninput="renderEventPersonSelector()">
+      </div>
+      <div id="ev-persons" style="max-height:160px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px;background:var(--bg2);"></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Se agregarán solo a este evento, sin necesidad de crear un grupo.</div>
       <label>Notas (opcional)</label><input type="text" id="ev-notes" placeholder="Observaciones">
       <div class="modal-actions">
         <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -516,7 +507,7 @@ const initials = n => n.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().
 const fmtDate = d => { try { return new Date(d+'T12:00:00').toLocaleDateString('es-CO',{weekday:'short',year:'numeric',month:'short',day:'numeric'}); } catch(e){return d;} };
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
-let cache = { projects:[], persons:[], events:[], attendance:{}, project_persons:[], groups:[], group_persons:[] };
+let cache = { projects:[], persons:[], events:[], attendance:{}, groups:[], group_persons:[] };
 let pendingSync = [];   // cambios offline pendientes
 let online = true;
 let currentProject = null;
@@ -533,7 +524,6 @@ function loadLocal() {
     if(raw) { 
       const d=JSON.parse(raw); 
       cache=d.cache||cache; 
-      cache.project_persons = cache.project_persons || [];
       pendingSync=d.pendingSync||[];
       signatures=d.signatures||{};
     }
@@ -592,18 +582,16 @@ async function apiFetch(method, path, body) {
 
 // ─── Sincronización con servidor ─────────────────────────────────────────────
 async function fetchAll() {
-  const [projects, events, persons, projectPersons, groups, groupPersons] = await Promise.all([
+  const [projects, events, persons, groups, groupPersons] = await Promise.all([
     apiFetch('GET','/projects'),
     apiFetch('GET','/events'),
     apiFetch('GET','/persons'),
-    apiFetch('GET','/project-persons'),
     apiFetch('GET','/groups').catch(() => []),
     apiFetch('GET','/group-persons').catch(() => []),
   ]);
   cache.projects = projects;
   cache.events = events;
   cache.persons = persons;
-  cache.project_persons = projectPersons || [];
   cache.groups = groups || [];
   cache.group_persons = groupPersons || [];
   saveLocal();
@@ -625,21 +613,21 @@ async function autoSync() {
     }
 
     // Construir payload
-    const payload = { projects:[], persons:[], events:[], attendance:{}, assignments:[], unassignments:[], groups:[], group_assignments:[], group_unassignments:[] };
+    const payload = { projects:[], persons:[], events:[], attendance:{}, groups:[], group_assignments:[], group_unassignments:[], deleted_groups:[] };
     for(const op of pendingSync) {
       if(op.type==='project')       payload.projects.push(op.data);
       if(op.type==='person')        payload.persons.push(op.data);
       if(op.type==='event')         payload.events.push(op.data);
-      if(op.type==='assign')        payload.assignments.push(op.data);
-      if(op.type==='unassign')      payload.unassignments.push(op.data);
       if(op.type==='group')         payload.groups.push(op.data);
       if(op.type==='group_assign')  payload.group_assignments.push(op.data);
       if(op.type==='group_unassign')payload.group_unassignments.push(op.data);
+      if(op.type==='delete_group')  payload.deleted_groups.push(op.data.id);
       if(op.type==='attendance'){
         const {event_id, person_id, present} = op.data;
         if(!payload.attendance[event_id]) payload.attendance[event_id]={};
         // include signature if available in the pending op
         if(op.data.signature) payload.attendance[event_id][person_id] = { present: present, signature: op.data.signature };
+        else if(op.data._delete) payload.attendance[event_id][person_id] = { present: false, _delete: true };
         else payload.attendance[event_id][person_id] = present;
       }
     }
@@ -705,6 +693,8 @@ function openModal(name) {
     document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
     populateResponsibleSelect('');
     renderEventGroupSelector();
+    document.getElementById('ev-person-search').value = '';
+    renderEventPersonSelector();
   }
   if(name==='newGroup') {
     document.getElementById('group-modal-title').textContent = 'Nuevo grupo';
@@ -766,7 +756,6 @@ async function deleteProject(id) {
     catch(e){ showToast('Error: '+e.message); return; }
   }
   cache.projects=cache.projects.filter(x=>x.id!==id);
-  cache.project_persons=(cache.project_persons || []).filter(x=>x.project_id!==id);
   const eids=cache.events.filter(e=>e.project_id===id).map(e=>e.id);
   cache.events=cache.events.filter(e=>e.project_id!==id);
   eids.forEach(eid=>delete cache.attendance[eid]);
@@ -781,33 +770,6 @@ function openProject(id) {
 }
 
 function openPersonModal() {
-  setPersonModalTab('existing');
-  
-  // Populate existing persons select
-  const projectPersonIds = (cache.project_persons || [])
-    .filter(ap => ap.project_id === currentProject.id)
-    .map(ap => ap.person_id);
-  
-  const availablePersons = cache.persons.filter(person => !projectPersonIds.includes(person.id));
-  
-  const select = document.getElementById('select-existing-person');
-  const noMsg = document.getElementById('no-existing-msg');
-  const btnAssign = document.getElementById('btn-assign-existing');
-  
-  if (availablePersons.length === 0) {
-    select.style.display = 'none';
-    noMsg.style.display = 'block';
-    btnAssign.disabled = true;
-  } else {
-    select.style.display = 'block';
-    noMsg.style.display = 'none';
-    btnAssign.disabled = false;
-    select.innerHTML = availablePersons.map(p => {
-      const tipoLabel = (p.tipo || 'asistente') === 'asistente' ? 'Asistente' : 'Responsable';
-      return `<option value="${p.id}">${p.nombres || p.name || ''} ${p.apellidos || ''} (${p.cedula || 'Sin ID'}) - ${p.cargo || p.role || 'Sin cargo'} [${tipoLabel}]</option>`;
-    }).join('');
-  }
-  
   openModal('newPerson');
 }
 
@@ -817,32 +779,197 @@ async function loadDashboard(){
   el.innerHTML = `<div class="loading"><i class="ti ti-chart-pie"></i> Cargando estadísticas...</div>`;
   try{
     const s = await apiFetch('GET','/stats');
+    
     el.innerHTML = `
-      <div class="stats-row">
-        <div class="stat-card"><div class="stat-num">${s.projects}</div><div class="stat-lbl">Proyectos</div></div>
-        <div class="stat-card"><div class="stat-num">${s.persons}</div><div class="stat-lbl">Personas</div></div>
-        <div class="stat-card"><div class="stat-num">${s.events}</div><div class="stat-lbl">Eventos</div></div>
+      <!-- KPIs Principales -->
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:18px;font-weight:600;margin-bottom:12px">📊 Indicadores Clave</h3>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-num">${s.projects}</div>
+            <div class="stat-lbl">Proyectos</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">${s.groups || 0}</div>
+            <div class="stat-lbl">Grupos</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">${s.persons}</div>
+            <div class="stat-lbl">Personas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">${s.events}</div>
+            <div class="stat-lbl">Eventos</div>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-num">${s.attendance_records}</div>
+            <div class="stat-lbl">Registros totales</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">${s.attendance_present}</div>
+            <div class="stat-lbl">Presentes</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">${s.attendance_records - s.attendance_present}</div>
+            <div class="stat-lbl">Ausentes</div>
+          </div>
+          <div class="stat-card" style="background: ${s.attendance_pct >= 90 ? 'linear-gradient(135deg, #1e7e34 0%, #28a745 100%)' : s.attendance_pct >= 75 ? 'linear-gradient(135deg, #ff6b00 0%, #ff8c00 100%)' : 'linear-gradient(135deg, #c82333 0%, #dc3545 100%)'};color:white">
+            <div class="stat-num" style="color:white">${s.attendance_pct}%</div>
+            <div class="stat-lbl" style="color:white">Asistencia Global</div>
+          </div>
+        </div>
       </div>
-      <div class="stats-row">
-        <div class="stat-card"><div class="stat-num">${s.attendance_records}</div><div class="stat-lbl">Registros asistencia</div></div>
-        <div class="stat-card"><div class="stat-num">${s.attendance_present}</div><div class="stat-lbl">Presentes totales</div></div>
-        <div class="stat-card"><div class="stat-num">${s.attendance_pct}%</div><div class="stat-lbl">Tasa de asistencia</div></div>
-      </div>
-      <div class="card"><div style="font-weight:500;margin-bottom:8px">Últimos eventos</div>
-        ${s.recent_events.length? s.recent_events.map(ev=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-            <div>
+
+      <!-- Eventos Críticos -->
+      ${s.critical_events && s.critical_events.length > 0 ? `
+      <div class="card" style="border-left:4px solid #dc3545;background:#fff5f5;margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <i class="ti ti-alert-triangle" style="color:#dc3545;font-size:20px"></i>
+          <span style="font-weight:600;font-size:16px;color:#dc3545">⚠️ Eventos que requieren atención (< 70% asistencia)</span>
+        </div>
+        ${s.critical_events.slice(0,3).map(ev=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #ffdddd">
+            <div style="flex:1">
               <div style="font-weight:500">${ev.name}</div>
-              <div style="font-size:12px;color:var(--text2)">${ev.date}${ev.responsible?` · Responsable: ${ev.responsible}`:''}</div>
+              <div style="font-size:12px;color:var(--text2)">${ev.date} · ${ev.project}</div>
             </div>
             <div style="text-align:right">
-              <div style="font-weight:600">${ev.present}/${ev.expected}</div>
-              <div style="font-size:12px;color:var(--text2)">${ev.pct}%</div>
+              <div style="font-weight:600;color:#dc3545">${ev.present}/${ev.expected}</div>
+              <div style="font-size:12px;color:#dc3545">${ev.pct}%</div>
+            </div>
+          </div>
+        `).join('')}
+        ${s.critical_events.length > 3 ? `<div style="text-align:center;padding-top:8px;font-size:13px;color:var(--text2)">Y ${s.critical_events.length - 3} evento(s) más con baja asistencia</div>` : ''}
+      </div>
+      ` : ''}
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:20px;margin-bottom:20px">
+        
+        <!-- Top 5 Proyectos -->
+        ${s.top_projects && s.top_projects.length > 0 ? `
+        <div class="card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#28a745">🏆 Mejores Proyectos</div>
+          ${s.top_projects.slice(0,5).map((proj,i)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:600;color:#28a745">${i+1}</span>
+                <div>
+                  <div style="font-weight:500;font-size:14px">${proj.name}</div>
+                  <div style="font-size:12px;color:var(--text2)">${proj.events} evento(s)</div>
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:600;color:#28a745">${proj.pct}%</div>
+                <div style="font-size:12px;color:var(--text2)">${proj.present}/${proj.expected}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+
+        <!-- Peores Proyectos -->
+        ${s.worst_projects && s.worst_projects.length > 0 ? `
+        <div class="card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#dc3545">📉 Proyectos que Requieren Atención</div>
+          ${s.worst_projects.slice(0,5).map((proj)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-weight:500;font-size:14px">${proj.name}</div>
+                <div style="font-size:12px;color:var(--text2)">${proj.events} evento(s)</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:600;color:#dc3545">${proj.pct}%</div>
+                <div style="font-size:12px;color:var(--text2)">${proj.present}/${proj.expected}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:20px;margin-bottom:20px">
+        
+        <!-- Top Personas -->
+        ${s.top_persons && s.top_persons.length > 0 ? `
+        <div class="card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#0C447C">🌟 Personas con Mejor Asistencia</div>
+          ${s.top_persons.slice(0,5).map((p,i)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:600;color:#28a745">${i+1}</span>
+                <div>
+                  <div style="font-weight:500;font-size:14px">${p.name}</div>
+                  <div style="font-size:12px;color:var(--text2)">${p.cargo}</div>
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:600;color:#28a745">${p.pct}%</div>
+                <div style="font-size:12px;color:var(--text2)">${p.present}/${p.expected}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+
+        <!-- Análisis por Grupos -->
+        ${s.group_stats && s.group_stats.length > 0 ? `
+        <div class="card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#0C447C">👥 Desempeño de Grupos</div>
+          ${s.group_stats.slice(0,5).map((g)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-weight:500;font-size:14px">${g.name}</div>
+                <div style="font-size:12px;color:var(--text2)">${g.members} miembro(s)</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:600;color:${g.pct >= 90 ? '#28a745' : g.pct >= 75 ? '#ff8c00' : '#dc3545'}">${g.pct}%</div>
+                <div style="font-size:12px;color:var(--text2)">${g.present}/${g.expected}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+      </div>
+
+      <!-- Tendencia de Asistencia -->
+      ${s.trend_data && s.trend_data.length > 0 ? `
+      <div class="card">
+        <div style="font-weight:600;font-size:15px;margin-bottom:12px">📈 Tendencia de Asistencia (Últimos 10 eventos)</div>
+        <div style="display:flex;gap:4px;align-items:flex-end;height:150px;padding:10px 0">
+          ${s.trend_data.map(t=>`
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px">
+              <div style="font-size:11px;font-weight:600;color:${t.pct >= 90 ? '#28a745' : t.pct >= 75 ? '#ff8c00' : '#dc3545'}">${t.pct}%</div>
+              <div style="width:100%;background:${t.pct >= 90 ? '#28a745' : t.pct >= 75 ? '#ff8c00' : '#dc3545'};height:${t.pct}%;min-height:5px;border-radius:4px 4px 0 0"></div>
+              <div style="font-size:9px;color:var(--text2);writing-mode:vertical-rl;transform:rotate(180deg);max-height:60px;overflow:hidden;text-overflow:ellipsis">${t.name}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="text-align:center;font-size:12px;color:var(--text2);margin-top:8px">
+          ${s.trend_data.length > 0 ? `Rango: ${s.trend_data[0].date} - ${s.trend_data[s.trend_data.length-1].date}` : ''}
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Últimos eventos -->
+      <div class="card" style="margin-top:20px">
+        <div style="font-weight:600;font-size:15px;margin-bottom:12px">🕐 Últimos Eventos</div>
+        ${s.recent_events.length? s.recent_events.map(ev=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1">
+              <div style="font-weight:500">${ev.name}</div>
+              <div style="font-size:12px;color:var(--text2)">${ev.date} · ${ev.project}${ev.responsible?` · ${ev.responsible}`:''}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:600;color:${ev.pct >= 90 ? '#28a745' : ev.pct >= 75 ? '#ff8c00' : '#dc3545'}">${ev.present}/${ev.expected}</div>
+              <div style="font-size:12px;color:${ev.pct >= 90 ? '#28a745' : ev.pct >= 75 ? '#ff8c00' : '#dc3545'}">${ev.pct}%</div>
             </div>
           </div>`).join('') : '<div class="empty">No hay eventos recientes</div>'}
       </div>
     `;
   }catch(e){ 
+    console.error('Error loading dashboard:', e);
     el.innerHTML = `
       <div class="empty" style="padding:48px 20px;">
         <i class="ti ti-chart-pie-off"></i>
@@ -901,54 +1028,6 @@ async function uploadDB(){
   }catch(e){ msg.textContent = 'Error: '+e.message; showToast('Error al subir la BD'); }
 }
 
-function setPersonModalTab(tab) {
-  document.querySelectorAll('.modal-tab-content').forEach(el => el.style.display = 'none');
-  document.getElementById('person-tab-' + tab).style.display = 'block';
-  
-  document.querySelectorAll('#modal-newPerson .nav-btn').forEach(btn => {
-    btn.classList.remove('active');
-    btn.style.borderBottomColor = 'transparent';
-    btn.style.color = 'var(--text2)';
-  });
-  const activeBtn = document.getElementById('tab-opt-' + tab);
-  if (activeBtn) {
-    activeBtn.classList.add('active');
-    activeBtn.style.borderBottomColor = 'var(--purple)';
-    activeBtn.style.color = 'var(--purple)';
-  }
-}
-
-async function assignExistingPerson() {
-  const select = document.getElementById('select-existing-person');
-  const personId = select.value;
-  if (!personId || !currentProject) return;
-  
-  const person = cache.persons.find(p => p.id === personId);
-  const nombres_completos = person ? `${person.nombres || person.name || ''} ${person.apellidos || ''}` : 'Persona';
-  
-  const assoc = { project_id: currentProject.id, person_id: personId };
-  
-  if (online) {
-    try {
-      await apiFetch('POST', `/projects/${currentProject.id}/persons/${personId}`);
-      cache.project_persons.push(assoc);
-      saveLocal();
-    } catch (e) {
-      showToast('Error: ' + e.message);
-      return;
-    }
-  } else {
-    cache.project_persons.push(assoc);
-    pendingSync.push({ type: 'assign', data: assoc });
-    saveLocal();
-    updatePendingTab();
-  }
-  
-  closeModal();
-  renderProjectDetail(currentProject);
-  showToast(`${nombres_completos} asignado/a al proyecto`);
-}
-
 async function createNewPerson() {
   const nombres = document.getElementById('person-nombres').value.trim();
   const apellidos = document.getElementById('person-apellidos').value.trim();
@@ -959,11 +1038,11 @@ async function createNewPerson() {
   const correo = document.getElementById('person-correo').value.trim();
   const celular = document.getElementById('person-celular').value.trim();
   
-  if (!nombres || !apellidos || !cedula || !cargo || !currentProject) {
+  if (!nombres || !apellidos || !cedula || !cargo) {
     showToast('Los campos nombres, apellidos, cédula y cargo son obligatorios.');
     return;
   }
-  
+
   const personId = uid();
   const personData = {
     id: personId,
@@ -973,15 +1052,13 @@ async function createNewPerson() {
     cargo,
     tipo,
     correo,
-    celular,
-    project_id: currentProject.id
+    celular
   };
-  
+
   if (online) {
     try {
       const savedPerson = await apiFetch('POST', '/persons', personData);
       cache.persons.push(savedPerson);
-      cache.project_persons.push({ project_id: currentProject.id, person_id: savedPerson.id });
       saveLocal();
     } catch (e) {
       showToast('Error: ' + e.message);
@@ -989,39 +1066,38 @@ async function createNewPerson() {
     }
   } else {
     cache.persons.push(personData);
-    cache.project_persons.push({ project_id: currentProject.id, person_id: personId });
     pendingSync.push({ type: 'person', data: personData });
     saveLocal();
     updatePendingTab();
   }
-  
+
   closeModal();
-  renderProjectDetail(currentProject);
-  showToast(`${nombres} ${apellidos} creado/a y asignado/a`);
+  if(currentProject && document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+  showToast(`${nombres} ${apellidos} creado/a`);
 }
 
 async function deletePerson(id) {
   const p=cache.persons.find(x=>x.id===id);
   const nombres_completos = p ? `${p.nombres || p.name || ''} ${p.apellidos || ''}` : 'esta persona';
-  if(!confirm(`¿Desasignar a "${nombres_completos}" del proyecto?`)) return;
-  
-  const assoc = { project_id: currentProject.id, person_id: id };
-  
+  if(!confirm(`¿Eliminar a "${nombres_completos}" permanentemente?`)) return;
+
   if(online) {
-    try { 
-      await apiFetch('DELETE',`/projects/${currentProject.id}/persons/${id}`); 
-      cache.project_persons = (cache.project_persons || []).filter(x => !(x.project_id === currentProject.id && x.person_id === id));
+    try {
+      await apiFetch('DELETE',`/persons/${id}`);
+      cache.persons = cache.persons.filter(x => x.id !== id);
+      cache.group_persons = cache.group_persons.filter(gp => gp.person_id !== id);
       saveLocal();
     }
     catch(e){ showToast('Error: '+e.message); return; }
   } else {
-    cache.project_persons = (cache.project_persons || []).filter(x => !(x.project_id === currentProject.id && x.person_id === id));
-    pendingSync.push({ type: 'unassign', data: assoc });
+    cache.persons = cache.persons.filter(x => x.id !== id);
+    cache.group_persons = cache.group_persons.filter(gp => gp.person_id !== id);
+    pendingSync.push({ type: 'person', data: { id, _delete: true } });
     saveLocal();
     updatePendingTab();
   }
-  renderProjectDetail(currentProject); 
-  showToast('Persona desasignada del proyecto');
+  if(currentProject && document.getElementById('view-project-detail').classList.contains('active')) renderProjectDetail(currentProject);
+  showToast('Persona eliminada');
 }
 
 function downloadCsvTemplate(event) {
@@ -1048,7 +1124,7 @@ async function uploadCsvFile() {
   
   try {
     const token = localStorage.getItem('token');
-    const res = await fetch(`${API}/projects/${currentProject.id}/persons/upload-csv`, {
+    const res = await fetch(`${API}/persons/upload-csv`, {
       method: 'POST',
       headers: token ? { 'Authorization': 'Bearer ' + token } : {},
       body: formData
@@ -1060,11 +1136,10 @@ async function uploadCsvFile() {
     }
     
     const data = await res.json();
-    showToast(`CSV importado: ${data.created} creados, ${data.assigned} asignados`);
-    
+    showToast(`CSV importado: ${data.created} creados`);
+
     await fetchAll();
     closeModal();
-    renderProjectDetail(currentProject);
   } catch (e) {
     showToast('Error al importar CSV: ' + e.message);
   }
@@ -1106,6 +1181,8 @@ async function saveEvent() {
   if(respEl && respEl.value) data.responsible_id = respEl.value;
   const groupIds = Array.from(document.querySelectorAll('#ev-groups input[type="checkbox"]:checked')).map(cb => cb.value);
   if(groupIds.length) data.group_ids = groupIds;
+  const personIds = Array.from(document.querySelectorAll('#ev-persons input[type="checkbox"]:checked')).map(cb => cb.value);
+  if(personIds.length) data.person_ids = personIds;
 
   if(id) {
     // Editar
@@ -1153,6 +1230,27 @@ function renderEventGroupSelector() {
       <span><strong>${g.name}</strong> <span style="color:var(--text2);font-size:12px;">(${count} persona${count!==1?'s':''})</span></span>
     </label>`;
   }).join('');
+}
+
+function renderEventPersonSelector() {
+  const container = document.getElementById('ev-persons');
+  if(!container) return;
+  const q = (document.getElementById('ev-person-search')?.value || '').toLowerCase();
+  let persons = cache.persons.filter(p => (p.tipo || 'asistente') === 'asistente');
+  if(q) persons = persons.filter(p => {
+    const full = `${p.nombres||p.name||''} ${p.apellidos||''} ${p.cedula||''} ${p.cargo||p.role||''}`.toLowerCase();
+    return full.includes(q);
+  });
+  if(!persons.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px;text-align:center;">No hay personas disponibles. Crea personas en la pestaña Grupos.</div>';
+    return;
+  }
+  container.innerHTML = persons.map(p => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:14px;border-bottom:0.5px solid var(--border);">
+      <input type="checkbox" value="${p.id}">
+      <span>${p.nombres||p.name||''} ${p.apellidos||''} <span style="color:var(--text2);font-size:12px;">· ${p.cedula||'Sin ID'} · ${p.cargo||p.role||'Sin cargo'}</span></span>
+    </label>
+  `).join('');
 }
 
 function renderGroupPersonSelector() {
@@ -1249,7 +1347,7 @@ async function deleteGroup(id) {
     try { await apiFetch('DELETE', `/groups/${id}`); }
     catch(e){ showToast('Error: '+e.message); return; }
   } else {
-    pendingSync.push({ type: 'group', data: { id, name: g.name, description: g.description || '', _delete: true } });
+    pendingSync.push({ type: 'delete_group', data: { id } });
     updatePendingTab();
   }
   cache.groups = cache.groups.filter(x => x.id !== id);
@@ -1460,15 +1558,9 @@ async function saveEventAttendees() {
 async function markAll(val) {
   const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
   const attendeeIds = Object.keys(att);
-  const persons = attendeeIds.length
-    ? cache.persons.filter(p => attendeeIds.includes(p.id))
-    : cache.persons.filter(p => {
-        const projectPersonIds = (cache.project_persons || [])
-          .filter(ap => ap.project_id === currentEvent.project_id)
-          .map(ap => ap.person_id);
-        return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
-      });
-  
+  if(!attendeeIds.length) { showToast('No hay asistentes en este evento. Agrégalos primero.'); return; }
+  const persons = cache.persons.filter(p => attendeeIds.includes(p.id));
+
   persons.forEach(p=>{ att[p.id]=val; });
   if(online) {
     try {
@@ -1493,8 +1585,6 @@ function renderProjects() {
     return;
   }
   list.innerHTML=projs.map((p,i)=>{
-    const members = (cache.project_persons || [])
-      .filter(ap => ap.project_id === p.id).length;
     const events=cache.events.filter(e=>e.project_id===p.id).length;
     return `<div class="card" style="cursor:pointer" onclick="openProject('${p.id}')">
       <div class="card-row">
@@ -1503,7 +1593,6 @@ function renderProjects() {
           <div style="min-width:0"><div class="card-title">${p.name}</div><div class="card-sub">${p.description||'Sin descripción'}</div></div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-          <span class="badge bp"><i class="ti ti-users"></i>${members}</span>
           <span class="badge bt"><i class="ti ti-calendar"></i>${events}</span>
           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteProject('${p.id}')"><i class="ti ti-trash"></i></button>
         </div>
@@ -1514,13 +1603,7 @@ function renderProjects() {
 
 function renderProjectDetail(p) {
   if(!p) return;
-  const projectPersonIds = (cache.project_persons || [])
-    .filter(ap => ap.project_id === p.id)
-    .map(ap => ap.person_id);
-  const persons = cache.persons.filter(person => projectPersonIds.includes(person.id));
-  const asistentes = persons.filter(p => (p.tipo || 'asistente') === 'asistente');
-  const responsables = persons.filter(p => p.tipo === 'responsable');
-  
+
   const events=cache.events.filter(e=>e.project_id===p.id).sort((a,b)=>b.date.localeCompare(a.date));
   const evWithAtt=events.filter(e=>cache.attendance[e.id]&&Object.keys(cache.attendance[e.id]).length>0).length;
   document.getElementById('project-detail-content').innerHTML=`
@@ -1529,31 +1612,9 @@ function renderProjectDetail(p) {
       ${p.description?`<div style="font-size:14px;color:var(--text2);margin-top:2px">${p.description}</div>`:''}
     </div>
     <div class="stats-row">
-      <div class="stat-card"><div class="stat-num">${asistentes.length}</div><div class="stat-lbl">Asistentes</div></div>
-      <div class="stat-card"><div class="stat-num">${responsables.length}</div><div class="stat-lbl">Responsables</div></div>
       <div class="stat-card"><div class="stat-num">${events.length}</div><div class="stat-lbl">Eventos</div></div>
-    </div>
-    <div class="sh" style="margin-top:8px"><span style="font-weight:500">Personas</span>
-      <button class="btn btn-sm" onclick="openPersonModal()"><i class="ti ti-user-plus"></i>Agregar</button>
-    </div>
-    <div class="pbox">
-      ${persons.length===0
-        ?`<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px">Sin personas. Agrega la primera.</div>`
-        :persons.map((person,i)=>`
-          <div class="person-row" style="cursor:default; align-items: flex-start; padding: 12px 10px;">
-            <div class="av av-${colorFor(i)}" style="margin-top: 2px;">${initials(person.nombres || person.name || 'P')}</div>
-            <div class="pinfo" style="margin-left: 10px;">
-              <div class="pname" style="font-weight:600;">${person.nombres || person.name || ''} ${person.apellidos || ''}</div>
-              <div style="font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">
-                <span><strong>Cédula:</strong> ${person.cedula || 'N/A'}</span>
-                <span><strong>Cargo:</strong> ${person.cargo || person.role || 'Sin cargo'}</span>
-                <span><span class="badge ${(person.tipo || 'asistente') === 'asistente' ? 'bp' : 'bt'}">${(person.tipo || 'asistente') === 'asistente' ? 'Asistente' : 'Responsable'}</span></span>
-                ${person.correo ? `<span><strong>Correo:</strong> ${person.correo}</span>` : ''}
-                ${person.celular ? `<span><strong>Celular:</strong> ${person.celular}</span>` : ''}
-              </div>
-            </div>
-            <button class="btn btn-sm btn-danger" onclick="deletePerson('${person.id}')" title="Desasignar del proyecto" style="align-self: center;"><i class="ti ti-user-minus"></i></button>
-          </div>`).join('')}
+      <div class="stat-card"><div class="stat-num">${evWithAtt}</div><div class="stat-lbl">Con asistencia</div></div>
+      <div class="stat-card"><div class="stat-num">${events.length - evWithAtt}</div><div class="stat-lbl">Sin asistencia</div></div>
     </div>
     <div class="sh"><span style="font-weight:500">Eventos</span>
       <button class="btn btn-sm btn-primary" onclick="openModal('newEvent')"><i class="ti ti-plus"></i>Nuevo</button>
@@ -1564,8 +1625,8 @@ function renderProjectDetail(p) {
         const att=cache.attendance[ev.id]||{};
         const attendeeIds = Object.keys(att);
         const evAsistentes = attendeeIds.length
-          ? cache.persons.filter(p => attendeeIds.includes(p.id))
-          : asistentes;
+          ? cache.persons.filter(person => attendeeIds.includes(person.id))
+          : [];
         const present=Object.values(att).filter(v=>v).length;
         const total=evAsistentes.length;
         const pct=total?Math.round(present/total*100):0;
@@ -1601,12 +1662,7 @@ function renderAllEvents() {
     const attendeeIds = Object.keys(att);
     const asistentes = attendeeIds.length
       ? cache.persons.filter(p => attendeeIds.includes(p.id))
-      : cache.persons.filter(p => {
-          const projectPersonIds = (cache.project_persons || [])
-            .filter(ap => ap.project_id === ev.project_id)
-            .map(ap => ap.person_id);
-          return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
-        });
+      : [];
     const present=Object.values(att).filter(v=>v).length;
     const total=asistentes.length;
     const pct=total?Math.round(present/total*100):0;
@@ -1667,12 +1723,7 @@ function renderAttendance() {
   const attendeeIds = Object.keys(att);
   const persons = attendeeIds.length
     ? cache.persons.filter(p => attendeeIds.includes(p.id))
-    : cache.persons.filter(p => {
-        const projectPersonIds = (cache.project_persons || [])
-          .filter(ap => ap.project_id === ev.project_id)
-          .map(ap => ap.person_id);
-        return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
-      });
+    : [];
   const present=persons.filter(p=>att[p.id]).length;
   const absent=persons.length-present;
   const pct=persons.length?Math.round(present/persons.length*100):0;
@@ -1693,7 +1744,7 @@ function renderAttendance() {
       <button class="btn btn-sm" onclick="openEventAttendeesModal()"><i class="ti ti-users"></i>Gestionar asistentes</button>
     </div>
     ${persons.length===0
-      ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este proyecto no tiene asistentes registrados.</p></div>`
+      ?`<div class="empty"><i class="ti ti-users-off"></i><p>Este evento no tiene asistentes registrados. Usa "Gestionar asistentes" para agregarlos.</p></div>`
       :`<div class="pbox">${persons.map((p,i)=>{
           const isPresent=!!att[p.id];
           return `<div class="person-row ${isPresent?'present':'absent'}" onclick="toggleAtt('${p.id}')">
@@ -1714,7 +1765,7 @@ function renderAttendance() {
 function renderPending() {
   const list=document.getElementById('pending-list');
   if(!pendingSync.length) { list.innerHTML=`<div class="empty"><i class="ti ti-cloud-check"></i><p>Todo está sincronizado.</p></div>`; return; }
-  const labels={ project:'Proyecto creado', person:'Persona creada', event:'Evento creado', attendance:'Asistencia actualizada', assign:'Persona asignada', unassign:'Persona desasignada', group:'Grupo creado', group_assign:'Persona agregada a grupo', group_unassign:'Persona removida de grupo', delete_group:'Grupo eliminado' };
+  const labels={ project:'Proyecto creado', person:'Persona creada', event:'Evento creado', attendance:'Asistencia actualizada', group:'Grupo creado', group_assign:'Persona agregada a grupo', group_unassign:'Persona removida de grupo', delete_group:'Grupo eliminado' };
   list.innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:14px">${pendingSync.length} cambio${pendingSync.length!==1?'s':''} pendiente${pendingSync.length!==1?'s':''}. Activa internet y pulsa "Sincronizar ahora".</div>`
     +pendingSync.map(s=>`
       <div class="card">
