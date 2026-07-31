@@ -852,12 +852,22 @@ async function loadDashboard(){
   }
 }
 
-function downloadDB(){
+async function downloadDB(){
   const token = localStorage.getItem('token');
-  const a = document.createElement('a');
-  a.href = API + '/db/download?token=' + encodeURIComponent(token || '');
-  a.download = '';
-  document.body.appendChild(a); a.click(); a.remove();
+  try {
+    const res = await fetch(API + '/db/download', {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
+    if(!res.ok){ const err = await res.text().catch(()=>res.statusText); throw new Error(err); }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'asistencia.db';
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(url);
+    showToast('Base de datos descargada');
+  } catch(e) { showToast('Error al descargar BD: ' + e.message); }
 }
 
 function downloadExcelReport(){
@@ -1104,7 +1114,7 @@ async function saveEvent() {
       catch(e){ showToast('Error: '+e.message); return; }
     } else {
       const idx = cache.events.findIndex(e => e.id === id);
-      if(idx >= 0) { cache.events[idx] = {...cache.events[idx], ...data}; }
+      if(idx >= 0) { cache.events[idx] = {...cache.events[idx], ...data, id}; }
       pendingSync.push({type:'event', data: {...data, id}});
       saveLocal(); updatePendingTab();
     }
@@ -1209,8 +1219,11 @@ async function saveGroup() {
     const groupId = id || uid();
     if(!id) {
       cache.groups.unshift({ id: groupId, name, description, created_at: new Date().toISOString(), person_ids: [] });
-      pendingSync.push({ type: 'group', data: { id: groupId, name, description } });
+    } else {
+      const gidx = cache.groups.findIndex(g => g.id === groupId);
+      if(gidx >= 0) { cache.groups[gidx].name = name; cache.groups[gidx].description = description; }
     }
+    pendingSync.push({ type: 'group', data: { id: groupId, name, description } });
     const currentIds = new Set((cache.group_persons || []).filter(gp => gp.group_id === groupId).map(gp => gp.person_id));
     for(const pid of selectedIds) {
       if(!currentIds.has(pid)) {
@@ -1236,7 +1249,7 @@ async function deleteGroup(id) {
     try { await apiFetch('DELETE', `/groups/${id}`); }
     catch(e){ showToast('Error: '+e.message); return; }
   } else {
-    pendingSync.push({ type: 'delete_group', data: { id } });
+    pendingSync.push({ type: 'group', data: { id, name: g.name, description: g.description || '', _delete: true } });
     updatePendingTab();
   }
   cache.groups = cache.groups.filter(x => x.id !== id);
@@ -1446,10 +1459,15 @@ async function saveEventAttendees() {
 
 async function markAll(val) {
   const att=cache.attendance[currentEvent.id]=cache.attendance[currentEvent.id]||{};
-  const projectPersonIds = (cache.project_persons || [])
-    .filter(ap => ap.project_id === currentEvent.project_id)
-    .map(ap => ap.person_id);
-  const persons = cache.persons.filter(p => projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente');
+  const attendeeIds = Object.keys(att);
+  const persons = attendeeIds.length
+    ? cache.persons.filter(p => attendeeIds.includes(p.id))
+    : cache.persons.filter(p => {
+        const projectPersonIds = (cache.project_persons || [])
+          .filter(ap => ap.project_id === currentEvent.project_id)
+          .map(ap => ap.person_id);
+        return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
+      });
   
   persons.forEach(p=>{ att[p.id]=val; });
   if(online) {
@@ -1544,8 +1562,12 @@ function renderProjectDetail(p) {
       ?`<div class="empty" style="padding:28px"><i class="ti ti-calendar-off"></i><p>Sin eventos. Crea el primero.</p></div>`
       :events.map(ev=>{
         const att=cache.attendance[ev.id]||{};
+        const attendeeIds = Object.keys(att);
+        const evAsistentes = attendeeIds.length
+          ? cache.persons.filter(p => attendeeIds.includes(p.id))
+          : asistentes;
         const present=Object.values(att).filter(v=>v).length;
-        const total=asistentes.length;
+        const total=evAsistentes.length;
         const pct=total?Math.round(present/total*100):0;
         return `<div class="card">
           <div class="card-row">
@@ -1575,12 +1597,16 @@ function renderAllEvents() {
   const sorted=[...cache.events].sort((a,b)=>b.date.localeCompare(a.date));
   list.innerHTML=sorted.map(ev=>{
     const proj=cache.projects.find(p=>p.id===ev.project_id);
-    const projectPersonIds = (cache.project_persons || [])
-      .filter(ap => ap.project_id === ev.project_id)
-      .map(ap => ap.person_id);
-    const persons = cache.persons.filter(p => projectPersonIds.includes(p.id));
-    const asistentes = persons.filter(p => (p.tipo || 'asistente') === 'asistente');
     const att=cache.attendance[ev.id]||{};
+    const attendeeIds = Object.keys(att);
+    const asistentes = attendeeIds.length
+      ? cache.persons.filter(p => attendeeIds.includes(p.id))
+      : cache.persons.filter(p => {
+          const projectPersonIds = (cache.project_persons || [])
+            .filter(ap => ap.project_id === ev.project_id)
+            .map(ap => ap.person_id);
+          return projectPersonIds.includes(p.id) && (p.tipo || 'asistente') === 'asistente';
+        });
     const present=Object.values(att).filter(v=>v).length;
     const total=asistentes.length;
     const pct=total?Math.round(present/total*100):0;

@@ -402,6 +402,7 @@ class GroupCreate(BaseModel):
     id: Optional[str] = None
     name: str
     description: Optional[str] = ""
+    _delete: Optional[bool] = False
 
 class GroupOut(BaseModel):
     id: str
@@ -850,7 +851,7 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
     y los aplica en orden: proyectos → personas → eventos → asistencia.
     Usa upsert (insertar si no existe, ignorar si ya existe).
     """
-    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "assignments": 0, "unassignments": 0, "groups": 0, "group_assignments": 0, "group_unassignments": 0}
+    synced = {"projects": 0, "persons": 0, "events": 0, "attendance": 0, "assignments": 0, "unassignments": 0, "groups": 0, "group_assignments": 0, "group_unassignments": 0, "deleted_groups": 0}
 
     for p in payload.projects:
         if not db.query(Project).filter(Project.id == p.id).first():
@@ -906,10 +907,21 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
 
     db.flush()
 
+    # Eliminar grupos marcados para borrado
     for g in payload.groups:
-        if not db.query(Group).filter(Group.id == g.id).first():
+        if getattr(g, '_delete', False):
+            existing_group = db.query(Group).filter(Group.id == g.id).first()
+            if existing_group:
+                db.delete(existing_group)
+                synced["deleted_groups"] = synced.get("deleted_groups", 0) + 1
+            continue
+        existing_group = db.query(Group).filter(Group.id == g.id).first()
+        if not existing_group:
             db.add(Group(id=g.id, name=g.name, description=g.description or ""))
             synced["groups"] = synced.get("groups", 0) + 1
+        else:
+            existing_group.name = g.name
+            existing_group.description = g.description or ""
 
     db.flush()
 
@@ -947,19 +959,24 @@ def sync_offline(payload: SyncPayload, current_user: User = Depends(get_current_
 
     for event_id, records in payload.attendance.items():
         for person_id, present_val in records.items():
-            # support either boolean or dict { present: bool, signature: str }
+            # support either boolean or dict { present: bool, signature: str, _delete: bool }
             if isinstance(present_val, dict):
                 present = present_val.get('present', False)
                 signature = present_val.get('signature')
+                delete = present_val.get('_delete', False)
             else:
                 present = bool(present_val)
                 signature = None
+                delete = False
 
             existing = db.query(Attendance).filter(
                 Attendance.event_id == event_id,
                 Attendance.person_id == person_id
             ).first()
-            if existing:
+            if delete:
+                if existing:
+                    db.delete(existing)
+            elif existing:
                 existing.present = present
                 if signature:
                     existing.signature = signature
@@ -1052,7 +1069,7 @@ def _build_excel_report(db: Session) -> io.BytesIO:
             if resp:
                 responsible = f"{resp.nombres} {resp.apellidos}".strip()
 
-        expected = len([p for p in (proj.persons if proj else []) if p.tipo == "asistente"]) if proj else 0
+        expected = db.query(Attendance).filter(Attendance.event_id == ev.id).count()
         present = db.query(Attendance).filter(Attendance.event_id == ev.id, Attendance.present == True).count()
         absent = expected - present
         pct = round((present / expected * 100), 1) if expected else 0
@@ -1127,10 +1144,11 @@ def _build_excel_report(db: Session) -> io.BytesIO:
 
     for ev in events:
         proj = ev.project
-        assistants = [p for p in (proj.persons if proj else []) if p.tipo == "asistente"]
         attendance_map = {
             a.person_id: a for a in db.query(Attendance).filter(Attendance.event_id == ev.id).all()
         }
+        assistants = [db.query(Person).filter(Person.id == pid).first() for pid in attendance_map.keys()]
+        assistants = [p for p in assistants if p]
         for p in assistants:
             att = attendance_map.get(p.id)
             is_present = att.present if att else False
@@ -1205,9 +1223,7 @@ def get_stats(current_user: User = Depends(get_current_user), db: Session = Depe
     recent_evs = db.query(Event).order_by(Event.date.desc()).limit(5).all()
     for e in recent_evs:
         present = db.query(Attendance).filter(Attendance.event_id == e.id, Attendance.present == True).count()
-        # número esperado = número de asistentes asignados al proyecto
-        proj = db.query(Project).filter(Project.id == e.project_id).first()
-        total_expected = len([p for p in (proj.persons if proj else []) if p.tipo == "asistente"]) if proj else 0
+        total_expected = db.query(Attendance).filter(Attendance.event_id == e.id).count()
         pct = round((present / total_expected * 100), 1) if total_expected else 0
         resp = None
         if e.responsible_id:
